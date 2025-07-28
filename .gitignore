@@ -1,0 +1,24 @@
+# Virtual environment
+venv/
+
+# PyCharm settings
+.idea/
+
+# Secrets
+.env
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Log and temporary files
+*.log
+*.tmp
+
+# Jupyter notebook checkpoints (if you use Jupyter)
+.ipynb_checkpoints/
+
+# System files
+.DS_Store
+Thumbs.db
