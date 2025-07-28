@@ -1,5 +1,6 @@
 **Project structure**
 
+```bash
 football-predictor/
 ├── backend/
 │   ├── preprocessing/
@@ -32,5 +33,5 @@ football-predictor/
 ├── .gitignore
 ├── requirements.txt         # dependencies
 └── README.md
-
+```
 
