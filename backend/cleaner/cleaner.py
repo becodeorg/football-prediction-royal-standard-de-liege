@@ -1,10 +1,9 @@
 import logging
 import unicodedata
-
+from typing import Optional, Literal
 import numpy as np
 import pandas as pd
-
-from backend.preprocessing.cleaning_config import CleaningConfig
+from backend.cleaner.cleaning_config import CleaningConfig
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +21,11 @@ class DataCleaner:
         """
         self.df = df
 
-    def remove_duplicates(self, subset: str = None, keep="first") -> None:
+    def remove_duplicates(
+            self,
+            subset: Optional[str] = None,
+            keep: str = "first"
+    ) -> None:
         """
         Removes duplicate rows from the DataFrame.
 
@@ -35,9 +38,9 @@ class DataCleaner:
         self.df = self.df.drop_duplicates(subset=subset, keep=keep)
 
     def remove_columns_by_missing_percentage(
-        self,
-        percent: int = 60,
-        exceptions: list[str] = None,
+            self,
+            percent: int = 60,
+            exceptions: Optional[list[str]] = None,
     ) -> None:
         """
         Removes columns with missing values exceeding the specified percentage.
@@ -61,7 +64,10 @@ class DataCleaner:
             f"Dropped columns due to missing percentage >= {percent}%%: {columns_to_drop}"
         )
 
-    def drop_columns(self, columns: list[str] = None) -> None:
+    def drop_columns(
+            self,
+            columns: Optional[list[str]] = None
+    ) -> None:
         """
         Drop specified columns from the DataFrame.
 
@@ -71,7 +77,10 @@ class DataCleaner:
         if columns:
             self.df = self.df.drop(columns=columns)
 
-    def drop_rows_with_missing_value(self, required_columns: list[str] = None) -> None:
+    def drop_rows_with_missing_value(
+            self,
+            required_columns: Optional[list[str]] = None
+    ) -> None:
         """
         Drop rows where any of the required columns have missing values.
 
@@ -90,7 +99,10 @@ class DataCleaner:
 
         return missing_percentage
 
-    def normalize_text_columns(self, title_case_columns: list[str] = None) -> None:
+    def normalize_text_columns(
+            self,
+            title_case_columns: Optional[list[str]] = None
+    ) -> None:
         """
         Cleans string columns by:
         - Removing leading/trailing spaces
@@ -117,7 +129,10 @@ class DataCleaner:
                 )
 
     @staticmethod
-    def _clean_string(text: str, use_title_case: bool = False) -> str:
+    def _clean_string(
+            text: str,
+            use_title_case: bool = False
+    ) -> str:
         """
         Cleans and normalizes a string by applying the following transformations:
         - Strips leading and trailing whitespace
@@ -142,7 +157,8 @@ class DataCleaner:
         return text.title() if use_title_case else text.capitalize()
 
     def remove_by_column_values(
-        self, column: str = None, value: list[str] = None
+            self, column: Optional[str] = None,
+            value: Optional[list[str]] = None
     ) -> None:
         """
         Removes rows where the specified column has values in the given list.
@@ -158,7 +174,10 @@ class DataCleaner:
         self.df = self.df.query(f"{column} not in [{value_str}]")
 
     def replace_rare_values(
-        self, columns: list[str] = None, min_amount: int = 20, strategy: str = "drop"
+            self,
+            columns: Optional[list[str]] = None,
+            min_amount: int = 20,
+            strategy: str = "drop"
     ) -> None:
         """
         Replaces rare categories in the specified column with replacement parameter.
@@ -181,7 +200,7 @@ class DataCleaner:
                         lambda x: np.nan if x in rare_values else x
                     )
                 elif pd.api.types.is_object_dtype(
-                    self.df[column]
+                        self.df[column]
                 ) or pd.api.types.is_categorical_dtype(self.df[column]):
                     # Use pd.NA for categorical/text columns
                     self.df[column] = self.df[column].apply(
@@ -210,14 +229,15 @@ class DataCleaner:
         for col in numeric_cols:
             self.df[col] = pd.to_numeric(self.df[col], errors="coerce")
 
-    def clean_all(self, config: CleaningConfig) -> pd.DataFrame:
+    def clean_all(self) -> pd.DataFrame:
         """
         Perform all cleaning steps on the dataframe using a configuration object.
 
-        :param config: CleanConfig object containing all cleaning parameters.
         :return: Cleaned pandas DataFrame.
         """
+        config = CleaningConfig()
         logger.info("Starting full data cleaning process")
+
         self.remove_duplicates(
             subset=config.drop_duplicates_subset, keep=config.drop_duplicates_strategy
         )

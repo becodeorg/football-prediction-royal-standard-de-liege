@@ -1,37 +1,47 @@
 **Project structure**
 
 ```bash
-football-predictor/
-├── backend/
-│   ├── preprocessing/
-│   │   ├── cleaner.py          # data cleaning
-│   │   ├── cleaning_config.py
-│   ├── pipeline.py             # main pipeline for transformation data
-│   └── downloader.py           # load data from Kaggle
+football-predictor/  
+├── backend/ 
+│   ├── downloader/
+│   │    ├── base_downloader.py
+│   │    ├── some_downloader.py    # example
+│   │    ├── some_2_downloader.py  # example
+│   │    └── downloader_registry.py
+│   │
+│   ├── transformers/
+│   │    ├── base_transformer.py
+│   │    ├── some_transformer.py   # example
+│   │    ├── some_2_transformer.py # example
+│   │    └── transformer_registry.py
+│   │
+│   ├── cleaner/         
+│   │    ├── data_cleaner.py     # data cleaning   
+│   │    └── cleaning_config.py  # maybe don't need   
+│   │
+│   └── data_pipeline.py
 │
-├── model/
-│   └── predictor.py            # model (example)
-│
-├── notebooks/
-│   └── analyse.ipynb           # notebook for analyse (example)
-│
-├── trained_model/              #
-│
+├── model/  
+│   └── base_predictor.py           # model 
+│  
+├── notebooks/  
+│   └── analyse.ipynb           # notebook for analyse (example)  
+│  
 ├── data/                       # data storage
-│   └── dataset.csv
-│
-├── ui/                         # visual
-│   ├── app_styles.py           # styles for streamlit app
-│   └── streamlit_app.py        #  streamlit app
-│
-├── utils/
-│   ├── logger_config.py       # config for logger
-│   └── data_io.py          # load/ save csv, model
-├── .env                     # environment variables
-├── .env.example
-├── config.py                # check for environment variables and load them in one go
-├── .gitignore
-├── requirements.txt         # dependencies
-└── README.md
+│   ├── dataset.csv             # raw data
+│   └── local.csv               # prepared data
+│  
+├── ui/                         # visual   
+│   ├── app_styles.py           # styles for streamlit app  
+│   └── streamlit_app.py        #  streamlit app  
+│  
+├── utils/  
+│   ├── data_io.py             # utils for save/load csv/ model 
+│   └── logger_config.py       # config for logger  
+├── .env                       # environment variables  
+├── .env.example               
+├── config.py                      
+├── .gitignore  
+├── requirements.txt         # dependencies  
+└── README.md  
 ```
-

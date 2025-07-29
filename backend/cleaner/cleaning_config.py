@@ -32,5 +32,7 @@ class CleaningConfig:
     column_for_special_remove: Optional[str] = None
     values_for_special_remove: Optional[list[str]] = None
     rare_values_columns: Optional[list[str]] = None
-    rare_values_min_amount: int = (20,)
+    rare_values_min_amount: int = 20
     rare_values_strategy: str = "drop"
+
+

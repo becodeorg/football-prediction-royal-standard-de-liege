@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def load_csv(filename: str, sep: str = ",", encoding: str = "utf-8") -> pd.DataFrame:
     """
-    Load a CSV file from the default directory defined in the .env file.
+    Load a CSV file from the default directory defined in the .env file (CSV_SAVE_LOAD_PATH).
 
     :param filename: Name of the CSV file (not full path).
     :param sep: Column separator in the CSV file (default is ',').
@@ -22,7 +22,7 @@ def load_csv(filename: str, sep: str = ",", encoding: str = "utf-8") -> pd.DataF
     :raises UnicodeError: If encoding fails.
     :raises Exception: For any other unexpected error.
     """
-    filepath = Path(settings.csv_save_load / filename).resolve()
+    filepath = Path(settings.csv_save_load_path / filename)
 
     try:
         df = pd.read_csv(filepath, sep=sep, encoding=encoding)
@@ -50,7 +50,7 @@ def save_csv(
     encoding: str = "utf-8",
 ) -> None:
     """
-    Saves a DataFrame to a CSV file at the path defined in .env (CSV_SAVE_PATH).
+    Saves a DataFrame to a CSV file at the path defined in .env (CSV_SAVE_LOAD_PATH).
 
     :param df: DataFrame to save.
     :param filename: Name of the file to be saved (e.g., 'cleaned.csv').
@@ -58,7 +58,7 @@ def save_csv(
     :param sep: Delimiter used in the CSV. Default is ','.
     :param encoding: Encoding format. Default is 'utf-8'.
     """
-    filepath = Path(settings.csv_save_load / filename).resolve()
+    filepath = Path(settings.csv_save_load_path / filename)
     filepath.parent.mkdir(parents=True, exist_ok=True)
 
     try:
