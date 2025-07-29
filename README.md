@@ -5,18 +5,16 @@ football-predictor/
 ├── backend/ 
 │   ├── downloader/
 │   │    ├── base_downloader.py
-│   │    ├── some_downloader.py    # example
-│   │    ├── some_2_downloader.py  # example
+│   │    ├── local_downloader.py    
 │   │    └── downloader_registry.py
 │   │
 │   ├── transformers/
 │   │    ├── base_transformer.py
-│   │    ├── some_transformer.py   # example
-│   │    ├── some_2_transformer.py # example
+│   │    ├── local_transformer.py   # example
 │   │    └── transformer_registry.py
 │   │
 │   ├── cleaner/         
-│   │    ├── data_cleaner.py     # data cleaning   
+│   │    ├── cleaner.py     # data cleaning   
 │   │    └── cleaning_config.py  # maybe don't need   
 │   │
 │   └── data_pipeline.py
