@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 
@@ -36,3 +36,13 @@ class CleaningConfig:
     rare_values_strategy: str = "drop"
 
 
+my_config = CleaningConfig(
+    exceptions=[
+        'home_form_last_5',
+        'away_form_last_5',
+        'home_goals_avg',
+        'away_goals_avg',
+        'home_conceded_avg',
+        'away_conceded_avg'
+    ]
+)

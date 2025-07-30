@@ -124,7 +124,7 @@ class LocalTransformer(BaseTransformer):
         self._check_required_columns(raw_df)
 
         df = raw_df.copy()
-        df["Date"] = pd.to_datetime(df["Date"])
+        df["Date"] = pd.to_datetime(df["Date"], dayfirst=True)
         df = df.sort_values("Date").reset_index(drop=True)
 
         return df

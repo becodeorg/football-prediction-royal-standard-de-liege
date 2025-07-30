@@ -1,9 +1,10 @@
 import logging
 import unicodedata
-from typing import Optional, Literal
+from typing import Optional
 import numpy as np
 import pandas as pd
 from backend.cleaner.cleaning_config import CleaningConfig
+from backend.cleaner.cleaning_config import my_config
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ class DataCleaner:
         self.df = self.df.drop(columns=columns_to_drop)
 
         logger.info(
-            f"Dropped columns due to missing percentage >= {percent}%, except: {columns_to_drop}"
+            f"Dropped columns due to missing percentage >= {percent}%: {columns_to_drop}, except: {exceptions}"
         )
 
     def drop_columns(
@@ -230,13 +231,13 @@ class DataCleaner:
         for col in numeric_cols:
             self.df[col] = pd.to_numeric(self.df[col], errors="coerce")
 
-    def clean_all(self) -> pd.DataFrame:
+    def clean_all(self, config: CleaningConfig = my_config) -> pd.DataFrame:
         """
         Perform all cleaning steps on the dataframe using a configuration object.
 
         :return: Cleaned pandas DataFrame.
         """
-        config = CleaningConfig()
+
         logger.info("Starting full data cleaning process")
 
         self.remove_duplicates(

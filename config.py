@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     """
     csv_save_load_path: Annotated[Path, Field(env="CSV_SAVE_LOAD_PATH")]
     model_save_load_path: Annotated[Path, Field(env="MODEL_SAVE_LOAD_PATH")]
+    belgium_data_base_url: Annotated[str, Field(env="BELGIUM_DATA_BASE_URL")]
 
     def model_post_init(self, __context) -> None:
         """

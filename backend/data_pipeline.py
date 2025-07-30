@@ -14,7 +14,6 @@ def run_pipeline(
         source_name: str,
         save: bool = False
 ) -> pd.DataFrame:
-
     if source_name not in DOWNLOADER_REGISTRY:
         raise ValueError(f"No downloader found for source: {source_name}")
     if source_name not in TRANSFORMER_REGISTRY:
@@ -39,3 +38,5 @@ def run_pipeline(
     return df_ready
 
 
+if __name__ == '__main__':
+    run_pipeline(source_name="Belgium_league", save=True)

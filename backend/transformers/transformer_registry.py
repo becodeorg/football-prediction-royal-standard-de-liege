@@ -1,12 +1,14 @@
 from typing import Type
 import logging
-from .local_transformer import LocalTransformer
-from .base_transformer import BaseTransformer
+from backend.transformers.local_transformer import LocalTransformer
+from backend.transformers.belgium_league_transformer import BelgiumLeagueTransformer
+from backend.transformers.base_transformer import BaseTransformer
 
 
 logger = logging.getLogger(__name__)
 
 TRANSFORMER_REGISTRY: dict[str, Type[BaseTransformer]] = {
     "local": LocalTransformer,
+    "Belgium_league": BelgiumLeagueTransformer
 
 }
