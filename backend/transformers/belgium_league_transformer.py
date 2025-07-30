@@ -5,7 +5,10 @@ logger = logging.getLogger(__name__)
 
 
 class BelgiumLeagueTransformer(LocalTransformer):
-    pass
+    """
+    Uses base LocalTransformer logic for Belgium league.
+    """
+    ...
 
 
 
