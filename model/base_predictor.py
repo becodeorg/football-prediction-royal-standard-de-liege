@@ -45,21 +45,27 @@ class BasePredictor(ABC):
 
     #----------------------------------------------------------------------------------------------------------------------------------------
 
-    def prepare_data(self, data: pd.DataFrame, target_column: str, test_size: float = 0.2): # Prepare the data for training by preprocessing and splitting into training and testing sets.
-        # 1. Preprocess the features using the specific model's method.
-        self.target_column = target_column # Set the target column.
-        processed_data = self.preprocess_features(data) # Preprocess the data using the specific model's method.
-        
-        # 2. Separate features and target variable.
-        X = processed_data.drop(columns=[target_column]) # Separate features from the target column : X contains all columns except the target.
-        y = processed_data[target_column] # y contains only the target column.
-        self.feature_columns = X.columns.tolist() # Store the feature columns for later use.
+    def prepare_data(self, data: pd.DataFrame, target_column: str = 'result', test_size: float = 0.2): # Prepare the data for training by preprocessing and splitting into training and testing sets.
+        # 1. Save the colomn names of the features and target.
+        print(f" {len(data)} football match ready for {self.__class__.__name__}")
+        self.target_column = target_column
+        y = data[target_column].copy()
 
-        # 3. Split the data into training and testing sets.
-        X_train, X_test, y_train, y_test = train_test_split(X,y, test_size=0.2, random_state=42, stratify=y) # Split the data into training and testing sets, ensuring that the target variable is stratified.
+        # 2. Preprocess only the features (without the target column)
+        features_data = data.drop(columns=[target_column])
+        processed_features = self.preprocess_features(features_data)
 
-        # 4. Return the training and testing sets.
-        return X_train, X_test, y_train, y_test # Return the training and testing sets for features and target variable.
+        # 3. Now X contains the processed features
+        X = processed_features
+        self.feature_columns = X.columns.tolist()
+
+        # 4. Split the data into training and testing sets
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=test_size, random_state=42, stratify=y
+        )
+
+        # 5. Return the training and testing sets
+        return X_train, X_test, y_train, y_test
     
     #----------------------------------------------------------------------------------------------------------------------------------------
 
@@ -85,15 +91,26 @@ class BasePredictor(ABC):
         if not self.is_trained: # If the model is not trained, raise an error
             raise ValueError("Model is not trained yet. Please train the model before making predictions.") # Raise an error if the model is not trained.
         
-        # 2. If the model is trained, proceed to make predictions.
-        return self.model.predict(X) # Return the predictions made by the model on the provided data.
+        # 2. Preprocess the new data using the same preprocessing as training
+        X_processed = self.preprocess_features(X)
+        
+        # 3. If the model is trained, proceed to make predictions.
+        return self.model.predict(X_processed) # Return the predictions made by the model on the processed data.
+    
+    def predict_preprocessed(self, X: pd.DataFrame) -> np.ndarray: # Make predictions on already preprocessed data.
+        # 1. Check if the model is trained before making predictions.
+        if not self.is_trained: # If the model is not trained, raise an error
+            raise ValueError("Model is not trained yet. Please train the model before making predictions.") # Raise an error if the model is not trained.
+        
+        # 2. Data is already preprocessed, use it directly
+        return self.model.predict(X) # Return the predictions made by the model on the preprocessed data.
     
     #----------------------------------------------------------------------------------------------------------------------------------------
 
     def evaluate(self, X_test : pd.DataFrame, y_test: pd.Series) -> dict: # Evaluate the model's performance on the test set and  return a dictionary of evaluation metrics.
-        # 1. Make predictions on the test set.
-        y_pred = self.predict(X_test)
-        
+        # 1. Make predictions on the test set (data is already preprocessed)
+        y_pred = self.predict_preprocessed(X_test)
+
         # 2. Calculate evaluation metrics.
         metrics = {
             'accuracy': accuracy_score(y_test, y_pred), # Calculate the accuracy of the model.
