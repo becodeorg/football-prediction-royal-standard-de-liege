@@ -53,15 +53,19 @@ class DataCleaner:
         """
         if exceptions is None:
             exceptions = []
+
         missing_percentage = self.get_missing_percentage()
+
         columns_to_drop = [
             col
             for col, perc in missing_percentage.items()
             if perc >= percent and col not in exceptions
         ]
+
         self.df = self.df.drop(columns=columns_to_drop)
+
         logger.info(
-            f"Dropped columns due to missing percentage >= {percent}%%: {columns_to_drop}"
+            f"Dropped columns due to missing percentage >= {percent}%, except: {columns_to_drop}"
         )
 
     def drop_columns(
@@ -209,13 +213,10 @@ class DataCleaner:
             elif strategy == "drop":
                 initial_shape = self.df.shape
                 self.df = self.df[~self.df[column].isin(rare_values)]
-                logger.info(
-                    f"Dropped {initial_shape[0] - self.df.shape[0]} rows due to rare values in '{column}'"
-                )
+
+                logger.info(f"Dropped {initial_shape[0] - self.df.shape[0]} rows due to rare values in '{column}'")
             else:
-                logger.error(
-                    f"Invalid strategy passed to replace_rare_values: '{strategy}'"
-                )
+                logger.error(f"Invalid strategy passed to replace_rare_values: '{strategy}'")
                 raise ValueError("Strategy must be 'replace' or 'drop'")
 
     def handle_errors(self) -> None:
@@ -257,6 +258,7 @@ class DataCleaner:
             strategy=config.rare_values_strategy,
         )
         self.handle_errors()
+
         logger.info("Finished data cleaning")
 
         return self.df

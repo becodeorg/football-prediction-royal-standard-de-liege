@@ -1,16 +1,84 @@
 import logging
+from typing import Optional
 from collections import defaultdict
+from dataclasses import dataclass, field
 import pandas as pd
 from .base_transformer import BaseTransformer
 
 logger = logging.getLogger(__name__)
+
+# Internal constant mapping result + home/away to points
+RESULT_POINTS = {
+    ("H", True): 3,
+    ("H", False): 0,
+    ("A", True): 0,
+    ("A", False): 3,
+    ("D", True): 1,
+    ("D", False): 1,
+}
+
+
+@dataclass
+class MatchStat:
+    """
+    Represents the statistics of a single match for a team.
+
+    Attributes:
+        points: Points earned in the match (e.g., 3 for win, 1 for draw, 0 for loss).
+        scored: Number of goals scored by the team.
+        conceded: Number of goals conceded by the team.
+    """
+    points: int
+    scored: int
+    conceded: int
+
+
+@dataclass
+class StatsSummary:
+    """
+    Summary of average statistics calculated over a set of matches.
+
+    Attributes:
+        avg_points: Average points earned across matches; None if no data.
+        avg_scored: Average goals scored per match; None if no data.
+        avg_conceded: Average goals conceded per match; None if no data.
+    """
+    avg_points: Optional[float]
+    avg_scored: Optional[float]
+    avg_conceded: Optional[float]
+
+
+@dataclass
+class FormFeatures:
+    """
+    Aggregated lists of form-related features over multiple matches for a team.
+
+    Attributes:
+        form_last_5: List of average points from last 5 matches per game.
+        goals_avg: List of average goals scored from last 5 matches per game.
+        conceded_avg: List of average goals conceded from last 5 matches per game.
+    """
+    form_last_5: list[Optional[float]] = field(default_factory=list)
+    goals_avg: list[Optional[float]] = field(default_factory=list)
+    conceded_avg: list[Optional[float]] = field(default_factory=list)
 
 
 class LocalTransformer(BaseTransformer):
     """
     Transformer that generates match-level features from raw football match data.
     Features include recent team form, scoring/conceding averages, and target outcome.
+
+    Expects input DataFrame to contain the following columns:
+        - Date
+        - HomeTeam
+        - AwayTeam
+        - FTHG (full-time home goals)
+        - FTAG (full-time away goals)
+        - FTR (full-time result: 'H', 'D', or 'A')
     """
+
+    REQUIRED_COLUMNS = ["Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR", "Div"]
+
     def transform(self, raw_df: pd.DataFrame) -> pd.DataFrame:
         """
         Apply the full transformation pipeline on the raw match data.
@@ -18,21 +86,47 @@ class LocalTransformer(BaseTransformer):
         :param raw_df: Raw match data.
         :return: Transformed dataset with added features.
         """
+        if raw_df.empty:
+            logger.error("Input DataFrame is empty")
+            raise ValueError("Input DataFrame cannot be empty")
+
         logger.info("Starting LocalTransformer.transform")
+
         df = self._prepare_dataframe(raw_df=raw_df)
-        return self._build_transform_df(df=df)
+        df_transformed = self._build_transform_df(df=df)
+
+        return df_transformed
 
     @staticmethod
-    def _prepare_dataframe(raw_df: pd.DataFrame) -> pd.DataFrame:
+    def _check_required_columns(df: pd.DataFrame) -> None:
+        """
+        Check if the DataFrame contains all required columns.
+
+        :param df: DataFrame to check.
+        :raises KeyError: If any required column is missing.
+        """
+
+        required_cols = LocalTransformer.REQUIRED_COLUMNS
+
+        for col in required_cols:
+            if col not in df.columns:
+                logger.error(f"Missing required column '{col}' in data frame")
+                raise KeyError(f"Column '{col}' is required for transformation")
+
+    def _prepare_dataframe(self, raw_df: pd.DataFrame) -> pd.DataFrame:
         """
         Convert date strings to datetime and sort by date.
 
         :param raw_df: Raw input data.
         :return: Sorted and date-formatted DataFrame.
         """
+
+        self._check_required_columns(raw_df)
+
         df = raw_df.copy()
         df["Date"] = pd.to_datetime(df["Date"])
         df = df.sort_values("Date").reset_index(drop=True)
+
         return df
 
     def _build_transform_df(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -42,15 +136,13 @@ class LocalTransformer(BaseTransformer):
         :param df: Preprocessed match data.
         :return: Feature-rich transformed data.
         """
+        self._check_required_columns(df)
+
         team_history: defaultdict = defaultdict(list)
-        (
-            home_form_last_5,
-            away_form_last_5,
-            home_goals_avg,
-            away_goals_avg,
-            home_conceded_avg,
-            away_conceded_avg,
-        ) = self._calculate_form_features(df=df, team_history=team_history)
+        home_features, away_features = self._calculate_form_features(
+            df=df,
+            team_history=team_history
+        )
 
         df_transformed = pd.DataFrame({
             "date": df["Date"],
@@ -58,13 +150,13 @@ class LocalTransformer(BaseTransformer):
             "away_team": df["AwayTeam"],
             "home_goals": df["FTHG"],
             "away_goals": df["FTAG"],
-            "home_form_last_5": home_form_last_5,
-            "away_form_last_5": away_form_last_5,
-            "home_goals_avg": home_goals_avg,
-            "away_goals_avg": away_goals_avg,
-            "home_conceded_avg": home_conceded_avg,
-            "away_conceded_avg": away_conceded_avg,
-            "competition": df["Div"] if "Div" in df.columns else None,
+            "home_form_last_5": home_features.form_last_5,
+            "away_form_last_5": away_features.form_last_5,
+            "home_goals_avg": home_features.goals_avg,
+            "away_goals_avg": away_features.goals_avg,
+            "home_conceded_avg": home_features.conceded_avg,
+            "away_conceded_avg": away_features.conceded_avg,
+            "competition": df["Div"],
             "season": df["Date"].apply(self._get_season),
             "target": df["FTR"].map({"H": 1, "D": 0, "A": -1}),
         })
@@ -81,19 +173,18 @@ class LocalTransformer(BaseTransformer):
         :param result: Match result, one of {"H", "D", "A"}.
         :param is_home: Whether the team is home.
         :return: Points earned.
+        :raises ValueError: If result is not one of the expected values.
         """
-        if result == "H":
-            return 3 if is_home else 0
-        elif result == "A":
-            return 0 if is_home else 3
-        elif result == "D":
-            return 1
-        return 0
+        if result not in {"H", "D", "A"}:
+            logger.error(f"Invalid match result encountered: {result}")
+            raise ValueError(f"Invalid match result: {result}. Expected one of 'H', 'D', 'A'.")
+
+        return RESULT_POINTS.get((result, is_home), 0)
 
     @staticmethod
-    def _compute_last_5_stats(
-            history: list[tuple[int, int, int]]
-    ) -> tuple[float, float, float]:
+    def _compute_last_5_games_stats(
+            history: list[MatchStat]
+    ) -> StatsSummary:
         """
         Compute average points, goals scored, and goals conceded over last 5 games.
 
@@ -101,22 +192,25 @@ class LocalTransformer(BaseTransformer):
         :return: Averages of last 5 games.
         """
         last_5 = history[-5:]
+
         if not last_5:
-            return (None, None, None)
-        points = [x[0] for x in last_5]
-        scored = [x[1] for x in last_5]
-        conceded = [x[2] for x in last_5]
-        return (
-            sum(points) / len(points),
-            sum(scored) / len(scored),
-            sum(conceded) / len(conceded),
+            return StatsSummary(None, None, None)
+
+        points = [x.points for x in last_5]
+        scored = [x.scored for x in last_5]
+        conceded = [x.conceded for x in last_5]
+
+        return StatsSummary(
+            avg_points=sum(points) / len(points),
+            avg_scored=sum(scored) / len(scored),
+            avg_conceded=sum(conceded) / len(conceded),
         )
 
     def _calculate_form_features(
             self,
             df: pd.DataFrame,
-            team_history: defaultdict
-    ) -> tuple[list, list, list, list, list, list]:
+            team_history: defaultdict[pd.Series, list[MatchStat]]
+    ) -> tuple[FormFeatures, FormFeatures]:
         """
         Calculate historical performance features for each match.
 
@@ -126,37 +220,54 @@ class LocalTransformer(BaseTransformer):
         :return: Tuple of lists containing features for all matches.
         """
 
-        home_form, away_form = [], []
-        home_goals_avg, away_goals_avg = [], []
-        home_conceded_avg, away_conceded_avg = [], []
+        home_features = FormFeatures()
+        away_features = FormFeatures()
 
         for _, row in df.iterrows():
-            home, away = row["HomeTeam"], row["AwayTeam"]
-            ftr, hg, ag = row["FTR"], row["FTHG"], row["FTAG"]
+            home = row["HomeTeam"]
+            away = row["AwayTeam"]
+            match_result = row["FTR"]
+            home_goals = row["FTHG"]
+            away_goals = row["FTAG"]
 
-            home_stats = self._compute_last_5_stats(team_history[home])
-            away_stats = self._compute_last_5_stats(team_history[away])
+            home_stats = self._compute_last_5_games_stats(team_history[home])
+            away_stats = self._compute_last_5_games_stats(team_history[away])
 
-            home_form.append(home_stats[0])
-            away_form.append(away_stats[0])
-            home_goals_avg.append(home_stats[1])
-            away_goals_avg.append(away_stats[1])
-            home_conceded_avg.append(home_stats[2])
-            away_conceded_avg.append(away_stats[2])
+            home_features.form_last_5.append(home_stats.avg_points)
+            away_features.form_last_5.append(away_stats.avg_points)
 
-            team_history[home].append((self._result_to_points(ftr, True), hg, ag))
-            team_history[away].append((self._result_to_points(ftr, False), ag, hg))
+            home_features.goals_avg.append(home_stats.avg_scored)
+            away_features.goals_avg.append(away_stats.avg_scored)
+
+            home_features.conceded_avg.append(home_stats.avg_conceded)
+            away_features.conceded_avg.append(away_stats.avg_conceded)
+
+            self._update_team_history(
+                team_history=team_history,
+                team=home,
+                points=self._result_to_points(match_result, True),
+                scored=home_goals,
+                conceded=away_goals
+            )
+            self._update_team_history(
+                team_history=team_history,
+                team=away,
+                points=self._result_to_points(match_result, False),
+                scored=away_goals,
+                conceded=home_goals
+            )
 
         logger.info("Form features calculated for all matches.")
 
-        return (
-            home_form,
-            away_form,
-            home_goals_avg,
-            away_goals_avg,
-            home_conceded_avg,
-            away_conceded_avg,
-        )
+        return home_features, away_features
+
+    @staticmethod
+    def _update_team_history(team_history, team, points, scored, conceded):
+        team_history[team].append(MatchStat(
+            points=points,
+            scored=scored,
+            conceded=conceded
+        ))
 
     @staticmethod
     def _get_season(date: pd.Timestamp) -> str:

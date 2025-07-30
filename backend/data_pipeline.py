@@ -39,5 +39,3 @@ def run_pipeline(
     return df_ready
 
 
-if __name__ == '__main__':
-    run_pipeline(source_name="local", save=True)
