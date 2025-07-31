@@ -3,8 +3,8 @@ import unicodedata
 from typing import Optional
 import numpy as np
 import pandas as pd
-from backend.cleaner.cleaning_config import CleaningConfig
-from backend.cleaner.cleaning_config import my_config
+from src.backend.cleaner.cleaning_config import CleaningConfig
+from src.backend.cleaner.cleaning_config import my_config
 
 logger = logging.getLogger(__name__)
 

@@ -158,7 +158,7 @@ class LocalTransformer(BaseTransformer):
             "away_conceded_avg": away_features.conceded_avg,
             "competition": df["Div"],
             "season": df["Date"].apply(self._get_season),
-            "target": df["FTR"].map({"H": 1, "D": 0, "A": -1}),
+            "result": df["FTR"].map({"H": 1, "D": 0, "A": -1}),
         })
 
         logger.info("Transformed DataFrame successfully built.")

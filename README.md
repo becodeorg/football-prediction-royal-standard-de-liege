@@ -1,37 +1,38 @@
 **Project structure**
 
 ```bash
-football-predictor/  
-├── backend/ 
-│   ├── downloader/
-│   │    ├── base_downloader.py
-│   │    ├── local_downloader.py    
-│   │    └── downloader_registry.py
-│   │
-│   ├── transformers/
-│   │    ├── base_transformer.py
-│   │    ├── local_transformer.py   # example
-│   │    └── transformer_registry.py
-│   │
-│   ├── cleaner/         
-│   │    ├── cleaner.py     # data cleaning   
-│   │    └── cleaning_config.py  # maybe don't need   
-│   │
-│   └── data_pipeline.py
-│
-├── model/  
-│   └── base_predictor.py           # model 
+football-predictor/ 
+├── src
+│    ├── backend/ 
+│    │   ├── downloader/
+│    │   │    ├── base_downloader.py
+│    │   │    ├── local_downloader.py    
+│    │   │    └── downloader_registry.py
+│    │   │
+│    │   ├── transformers/
+│    │   │    ├── base_transformer.py
+│    │   │    ├── local_transformer.py   
+│    │   │    └── transformer_registry.py
+│    │   │
+│    │   ├── cleaner/         
+│    │   │    ├── cleaner.py        
+│    │   │    └── cleaning_config.py  
+│    │   │
+│    │   ├── model/  
+│    │   │    └── base_predictor.py 
+│    │   │
+│    │   └── data_pipeline.py
+│    │
+│    └── frontend/                       
+│         ├── app_styles.py             
+│         └── streamlit_app.py
 │  
 ├── notebooks/  
 │   └── analyse.ipynb           # notebook for analyse (example)  
 │  
 ├── data/                       # data storage
-│   ├── dataset.csv             # raw data
-│   └── local.csv               # prepared data
-│  
-├── ui/                         # visual   
-│   ├── app_styles.py           # styles for streamlit app  
-│   └── streamlit_app.py        #  streamlit app  
+│   ├── prepared/
+│   └── raw/                   
 │  
 ├── utils/  
 │   ├── data_io.py             # utils for save/load csv/ model 

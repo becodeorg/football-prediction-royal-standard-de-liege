@@ -22,7 +22,7 @@ def load_csv(filename: str, sep: str = ",", encoding: str = "utf-8") -> pd.DataF
     :raises UnicodeError: If encoding fails.
     :raises Exception: For any other unexpected error.
     """
-    filepath = Path(settings.csv_save_load_path / filename)
+    filepath = Path(settings.csv_load_path / filename)
 
     try:
         df = pd.read_csv(filepath, sep=sep, encoding=encoding)
@@ -58,7 +58,7 @@ def save_csv(
     :param sep: Delimiter used in the CSV. Default is ','.
     :param encoding: Encoding format. Default is 'utf-8'.
     """
-    filepath = Path(settings.csv_save_load_path / filename)
+    filepath = Path(settings.csv_save_path / filename)
     filepath.parent.mkdir(parents=True, exist_ok=True)
 
     try:

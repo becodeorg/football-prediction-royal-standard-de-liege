@@ -8,9 +8,8 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from data.real_data_collector import RealDataCollector
-from model.simple_predictor_xgboost import SimplePredictorXGBoost
+from src.backend import SimplePredictorXGBoost
 from sklearn.model_selection import GridSearchCV
-from xgboost import XGBClassifier
 from imblearn.over_sampling import SMOTE
 import pandas as pd
 import numpy as np

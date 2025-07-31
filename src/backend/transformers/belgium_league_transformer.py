@@ -1,5 +1,5 @@
 import logging
-from backend.transformers.local_transformer import LocalTransformer
+from src.backend.transformers.local_transformer import LocalTransformer
 
 logger = logging.getLogger(__name__)
 

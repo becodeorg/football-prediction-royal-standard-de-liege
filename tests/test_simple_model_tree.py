@@ -12,7 +12,7 @@ import pandas as pd
 import numpy as np
 
 from data.real_data_collector import RealDataCollector
-from model.simple_predictor_tree import SimplePredictorTree
+from src.backend import SimplePredictorTree
 from imblearn.over_sampling import SMOTE
 
 def test_simple_predictor():

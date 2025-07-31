@@ -1,8 +1,8 @@
 import pandas as pd
 import logging
-from backend.downloaders.downloader_registry import DOWNLOADER_REGISTRY
-from backend.transformers.transformer_registry import TRANSFORMER_REGISTRY
-from backend.cleaner.cleaner import DataCleaner
+from src.backend.downloaders.downloader_registry import DOWNLOADER_REGISTRY
+from src.backend.transformers.transformer_registry import TRANSFORMER_REGISTRY
+from src.backend.cleaner.cleaner import DataCleaner
 from utils.logger_config import configure_logging
 from utils.data_io import save_csv
 
@@ -39,4 +39,4 @@ def run_pipeline(
 
 
 if __name__ == '__main__':
-    run_pipeline(source_name="Belgium_league", save=True)
+    run_pipeline(source_name="local")

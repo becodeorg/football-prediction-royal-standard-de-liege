@@ -8,7 +8,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from data.real_data_collector import RealDataCollector
-from model.simple_predictor_gradient import SimplePredictorGradient
+from src.backend import SimplePredictorGradient
 from sklearn.model_selection import GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
 from imblearn.over_sampling import SMOTE

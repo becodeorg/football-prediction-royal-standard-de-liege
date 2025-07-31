@@ -5,7 +5,7 @@ from datetime import datetime as dt
 import time
 from bs4 import BeautifulSoup
 import pandas as pd
-from backend.downloaders.base_downloder import BaseDownloader
+from src.backend.downloaders.base_downloder import BaseDownloader
 from config import settings
 from utils.data_io import save_csv
 
