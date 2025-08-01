@@ -45,27 +45,45 @@ class BasePredictor(ABC):
 
     #----------------------------------------------------------------------------------------------------------------------------------------
 
-    def prepare_data(self, data: pd.DataFrame, target_column: str = 'result', test_size: float = 0.2): # Prepare the data for training by preprocessing and splitting into training and testing sets.
+    def prepare_data(self, data: pd.DataFrame, target_column: str = 'FTR', test_size: float = 0.2): # Prepare the data for training by preprocessing and splitting into training and testing sets.
         # 1. Save the colomn names of the features and target.
         print(f" {len(data)} football match ready for {self.__class__.__name__}") # Print the number of football matches ready for processing.
         self.target_column = target_column # Set the target column name.
         y = data[target_column].copy() # Copy the target column to y for later use.
 
         # 2. Delete the target column from the dataset to avoid using it as a feature.
-        features_to_delete = ['home_goals', 'away_goals', 'result'] # List of features to delete from the dataset.
+        features_to_delete = ['FTHG', 'FTAG', 'FTR', 'home_goals', 'away_goals', 'result'] # List of features to delete from the dataset.
         features_data = data.drop(columns=features_to_delete, errors='ignore') # Drop the specified features from the dataset, ignoring errors if they don't exist.
 
-        # 3. List of valid features to keep in the dataset.
+        # 3. Map CSV columns to expected column names
+        column_mapping = {
+            'HomeTeam': 'home_team',
+            'AwayTeam': 'away_team'
+        }
+        
+        for csv_col, expected_col in column_mapping.items():
+            if csv_col in features_data.columns:
+                features_data[expected_col] = features_data[csv_col]
+
+        # 4. List of valid features to keep in the dataset.
         valid_features = [
             'home_team', 'away_team', # Team names(known before the match).
             'home_recent_form', 'away_recent_form', # Recent form of the teams (known before the match).
             'h2h_home_wins', 'h2h_away_wins', # Head-to-head wins of the teams (known before the match).
             'home_league_position', 'away_league_position'] # League positions of the teams (known before the match).
 
-        if all(column in features_data.columns for column in valid_features): # Check if all valid features are present in the dataset.
-            features_data = features_data[valid_features] # Keep only the valid features in the dataset.
+        # Keep only features that exist in the data (for now just team names)
+        available_features = [col for col in valid_features if col in features_data.columns]
+        if available_features:
+            features_data = features_data[available_features]
+        else:
+            # If no valid features, keep at least team columns
+            team_features = ['home_team', 'away_team']
+            existing_team_features = [col for col in team_features if col in features_data.columns]
+            if existing_team_features:
+                features_data = features_data[existing_team_features]
 
-        # 4. Call the preprocess 
+        # 5. Call the preprocess 
         processed_features = self.preprocess_features(features_data) # Preprocess the features using the preprocess_features method.
         
         # 5. Used processed features

@@ -45,6 +45,17 @@ class SimplePredictorForest(BasePredictor):
         print(f"Available columns in preprocess_features: {list(data.columns)}")
         processed_data = data.copy()
 
+        # Map CSV columns to expected columns
+        column_mapping = {
+            'HomeTeam': 'home_team',
+            'AwayTeam': 'away_team'
+        }
+        
+        # Rename columns if they exist
+        for csv_col, expected_col in column_mapping.items():
+            if csv_col in processed_data.columns:
+                processed_data[expected_col] = processed_data[csv_col]
+
         # Encode team names if they exist
         if 'home_team' in processed_data.columns:
             if 'home_team' not in self.label_encoders:
@@ -102,10 +113,10 @@ class SimplePredictorForest(BasePredictor):
     
     def train(self, data: pd.DataFrame): # Train the model with the provided DataFrame
         """
-        Train the model using a DataFrame with columns: home_team, away_team, home_goals, away_goals, outcome
+        Train the model using a DataFrame with columns: HomeTeam, AwayTeam, FTHG, FTAG, FTR
         """
         # Prepare data using parent class method
-        X_train, X_test, y_train, y_test = self.prepare_data(data, target_column='outcome')
+        X_train, X_test, y_train, y_test = self.prepare_data(data, target_column='FTR')
         
         # Call parent train method
         super().train(X_train, y_train)
@@ -113,6 +124,25 @@ class SimplePredictorForest(BasePredictor):
         # Store test data for evaluation
         self.X_test = X_test
         self.y_test = y_test
+        
+    def predict(self, input_df: pd.DataFrame) -> list:
+        """
+        Predict match outcomes for the given input DataFrame
+        """
+        # Map CSV columns to expected columns if needed
+        processed_input = input_df.copy()
+        
+        column_mapping = {
+            'HomeTeam': 'home_team',
+            'AwayTeam': 'away_team'
+        }
+        
+        for csv_col, expected_col in column_mapping.items():
+            if csv_col in processed_input.columns:
+                processed_input[expected_col] = processed_input[csv_col]
+        
+        # Call parent predict method
+        return super().predict(processed_input)
         
     def predict_home_goals(self, input_df: pd.DataFrame) -> list:
         """
