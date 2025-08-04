@@ -39,4 +39,4 @@ def run_pipeline(
 
 
 if __name__ == '__main__':
-    run_pipeline(source_name="B1_old", save=True)
+    run_pipeline(source_name="Belgium_league_2526")

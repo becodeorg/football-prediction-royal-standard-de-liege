@@ -1,11 +1,11 @@
 import streamlit as st
-import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 import sys
 import os
 import pandas as pd
 from styles.app_styles import AppStyle
+from components.team_logos import team_logos
 
 # -------------------- Page Configuration --------------------
 st.set_page_config(
@@ -19,7 +19,8 @@ st.set_page_config(
 DATA_PATH = os.path.abspath(os.path.dirname(__file__) + '/../../data/raw/dataset_old_2.csv')
 df_full = pd.read_csv(DATA_PATH)
 # Extract available seasons (years from Date column)
-df_full['Year'] = pd.to_datetime(df_full['Date'], errors='coerce').dt.year
+# Specify date format to avoid parsing warning (format: DD/MM/YYYY)
+df_full['Year'] = pd.to_datetime(df_full['Date'], format='%d/%m/%Y', errors='coerce').dt.year
 # Format seasons as 'Season YYYY-YYYY'
 raw_years = sorted(df_full['Year'].dropna().unique(), reverse=True)
 season_labels = [f"Season {int(y)}-{int(y)+1}" for y in raw_years]
@@ -50,32 +51,6 @@ st.markdown("""
         text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
     }
     
-    .team-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 15px;
-        text-align: center;
-        color: white;
-        margin: 10px 0;
-        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
-        transition: transform 0.3s ease;
-    }
-    
-    .team-card:hover {
-        transform: translateY(-5px);
-    }
-    
-    .prediction-result {
-        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-        padding: 25px;
-        border-radius: 20px;
-        text-align: center;
-        color: white;
-        margin: 20px 0;
-        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
-        border: 2px solid rgba(255, 255, 255, 0.1);
-    }
-    
     .stats-container {
         background: rgba(255, 255, 255, 0.05);
         padding: 20px;
@@ -93,20 +68,6 @@ st.markdown("""
         text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
         margin: 20px 0;
     }
-    
-    .stSelectbox > div > div > div {
-        background-color: rgba(255, 255, 255, 0.1);
-        border-radius: 10px;
-    }
-    
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 15px;
-        border-radius: 10px;
-        text-align: center;
-        color: white;
-        margin: 5px;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -122,11 +83,17 @@ st.markdown("""
 
 # -------------------- Data Section --------------------
 jupiler_teams = [
-    "Anderlecht", "Club Brugge", "Standard", "Genk",
-    "Gent", "Charleroi", "Cercle Brugge", "Antwerp",
-    "Westerlo", "OH Leuven", "Union Saint-Gilloise", "Mechelen",
-    "Eupen", "Kortrijk", "RWD Molenbeek", "St Truiden"
+    "Anderlecht", "Club Brugge", "Standard", "Genk", "Oostende",
+    "Gent", "Charleroi", "Cercle Brugge", "Antwerp", "Mouscron",
+    "Westerlo", "Union Saint-Gilloise", "Mechelen",
+    "Eupen", "Kortrijk", "RWD Molenbeek", "St. Truiden", "Seraing", "Waregem",
+    "Waasland-Beveren", "Beerschot VA", "Dender", "Oud-Heverlee Leuven"
 ]
+
+
+def get_team_logo(team_name: str) -> str:
+    """Get team logo URL from the dictionary"""
+    return team_logos.get(team_name, None)
 
 
 # -------------------- Team Selection Section --------------------
@@ -135,7 +102,6 @@ st.markdown("### 🏟️ Team Selection")
 col1, col2, col3 = st.columns([2, 1, 2])
 
 with col1:
-    st.markdown('<div class="team-card">', unsafe_allow_html=True)
     st.markdown("#### 🏠 Home Team")
     home_team = st.selectbox(
         "Choose the home team",
@@ -143,13 +109,11 @@ with col1:
         key="home",
         help="The team playing at home"
     )
-    st.markdown('</div>', unsafe_allow_html=True)
 
 with col2:
     st.markdown('<div class="vs-divider">VS</div>', unsafe_allow_html=True)
 
 with col3:
-    st.markdown('<div class="team-card">', unsafe_allow_html=True)
     st.markdown("#### 🛫 Away Team")
     away_options = [team for team in jupiler_teams if team != home_team]
     away_team = st.selectbox(
@@ -158,10 +122,6 @@ with col3:
         key="away",
         help="The team playing away"
     )
-    st.markdown('</div>', unsafe_allow_html=True)
-
-
-# --- Season selection for stats ---
 
 # -------------------- Model Loading Section --------------------
 @st.cache_resource(show_spinner=False)
@@ -323,166 +283,12 @@ def predict_match_outcome_with_score(home, away):
         st.code(traceback.format_exc())
         return '🤝 DRAW (default)', 50.0
 
-def show_prediction_results(prediction, confidence):
-    st.markdown("---")
-    st.markdown("### 🎯 Prediction Results")
-    
-    # Main container for prediction
-    st.markdown('<div class="prediction-container">', unsafe_allow_html=True)
-    
-    # Display of main result
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col2:
-        # Determination of color and icon according to prediction
-        if prediction == "Home Win":
-            result_emoji = "🏠"
-            result_text = "HOME VICTORY"
-            result_color = "#00D4AA"
-            interpretation = "The home team is favored to win this match"
-        elif prediction == "Away Win":
-            result_emoji = "🛫"
-            result_text = "AWAY VICTORY"
-            result_color = "#FF6B6B"
-            interpretation = "The away team is favored to win this match"
-        else:
-            result_emoji = "🤝"
-            result_text = "DRAW"
-            result_color = "#FFD93D"
-            interpretation = "Both teams have equal chances, draw likely"
-        
-        # Styled display of result
-        st.markdown(f"""
-        <div style="
-            background: linear-gradient(135deg, {result_color}20, {result_color}10);
-            border: 2px solid {result_color};
-            border-radius: 15px;
-            padding: 30px;
-            text-align: center;
-            margin: 20px 0;
-            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
-        ">
-            <div style="font-size: 4rem; margin-bottom: 10px;">{result_emoji}</div>
-            <div style="
-                font-size: 1.8rem;
-                font-weight: bold;
-                color: {result_color};
-                margin-bottom: 15px;
-                text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-            ">{result_text}</div>
-            <div style="
-                font-size: 1.1rem;
-                color: #FAFAFA;
-                font-style: italic;
-                margin-bottom: 20px;
-            ">{interpretation}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Confidence bar
-    st.markdown("#### 📈 Confidence Level")
-    
-    # Determination of confidence bar color
-    if confidence >= 80:
-        conf_color = "#00D4AA"
-        conf_text = "VERY HIGH"
-        conf_icon = "🔥"
-    elif confidence >= 60:
-        conf_color = "#FFD93D"
-        conf_text = "HIGH"
-        conf_icon = "👍"
-    elif confidence >= 40:
-        conf_color = "#FF8C42"
-        conf_text = "MODERATE"
-        conf_icon = "⚠️"
-    else:
-        conf_color = "#FF6B6B"
-        conf_text = "LOW"
-        conf_icon = "⚡"
-    
-    # Styled progress bar
-    progress_col1, progress_col2 = st.columns([3, 1])
-    
-    with progress_col1:
-        st.markdown(f"""
-        <div style="
-            background: #262730;
-            border-radius: 25px;
-            padding: 5px;
-            box-shadow: inset 0 3px 6px rgba(0,0,0,0.4);
-        ">
-            <div style="
-                width: {confidence}%;
-                height: 25px;
-                background: linear-gradient(90deg, {conf_color}, {conf_color}80);
-                border-radius: 20px;
-                transition: width 0.3s ease;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                color: white;
-                font-weight: bold;
-                font-size: 0.9rem;
-                text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-            ">{confidence:.1f}%</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with progress_col2:
-        st.markdown(f"""
-        <div style="
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 35px;
-            font-size: 1.1rem;
-            font-weight: bold;
-            color: {conf_color};
-        ">
-            {conf_icon} {conf_text}
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Model explanation
-    st.markdown("#### 🧠 About This Prediction")
-    
-    with st.expander("🔍 Prediction Model Details", expanded=False):
-        st.markdown("""
-        **Our AI model analyzes several key factors:**
-        
-        🏆 **Historical Performance**
-        - Previous match statistics
-        - Recent form trends
-        - Direct confrontation history
-        
-        📊 **Statistical Indicators**
-        - Goals scored and conceded
-        - Win percentage
-        - Home vs away performance
-        
-        ⚽ **Match Context**
-        - Home field advantage
-        - Motivation and stakes
-        - Playing conditions
-        
-        **Important note:** This prediction is based on historical data and statistics. 
-        Football remains unpredictable and many factors can influence the final result.
-        """)
-    
-    # Warning about prediction limits
-    st.warning("⚠️ **Disclaimer:** This prediction is provided for informational purposes only. "
-               "It does not constitute betting advice and does not guarantee the match result.")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-
 # --- Real stats extraction from dataset ---
 
 def get_real_stats(team, df):
-    # Filtrage strict par saison déjà appliqué dans df
+    # Strict filtering by season already applied in df
     home = df[df['HomeTeam'] == team]
     away = df[df['AwayTeam'] == team]
-    # Debug: display number of matches played and won for selected season
-    print(f"DEBUG {team} | Season: matches_played={len(home) + len(away)}, wins={(home['FTR'] == 'H').sum() + (away['FTR'] == 'A').sum()}")
     matches_played = len(home) + len(away)
     goals_scored = home['FTHG'].sum() + away['FTAG'].sum()
     goals_conceded = home['FTAG'].sum() + away['FTHG'].sum()
@@ -558,11 +364,11 @@ def show_stats_and_heatmap(home_team, away_team, season_year):
             help="Choose the season to analyze the statistics"
         )
         
-        show_advanced_stats = st.checkbox("📈 Advanced statistics", value=True)
+        show_advanced_stats = st.checkbox("📈 Advanced statistics", value=False)
         chart_type = st.radio(
             "📊 Visualization type",
-            ["Bar Chart", "Radar Chart", "Both"],
-            index=2
+            ["Bar Chart", "Radar Chart"],
+            index=0
         )
     
     # Data filtering by season
@@ -588,10 +394,13 @@ def show_stats_and_heatmap(home_team, away_team, season_year):
         st.markdown('<div class="stats-container">', unsafe_allow_html=True)
         st.markdown(f"### 🏠 {home_team}")
         
-        # Logo de l'équipe
-        logo_home = stats_home["Logo"]
-        if logo_home and isinstance(logo_home, str) and logo_home.strip() and str(logo_home).lower() != 'nan':
-            st.image(logo_home, width=100)
+        # Logo de l'équipe depuis notre dictionnaire
+        logo_home = get_team_logo(home_team)
+        if logo_home:
+            try:
+                st.image(logo_home, width=100)
+            except Exception:
+                st.write("🏠") # Fallback si l'image ne charge pas
         
         # Informations du stade
         def format_stadium(venue, city, capacity):
@@ -632,10 +441,13 @@ def show_stats_and_heatmap(home_team, away_team, season_year):
         st.markdown('<div class="stats-container">', unsafe_allow_html=True)
         st.markdown(f"### 🛫 {away_team}")
         
-        # Logo de l'équipe
-        logo_away = stats_away["Logo"]
-        if logo_away and isinstance(logo_away, str) and logo_away.strip() and str(logo_away).lower() != 'nan':
-            st.image(logo_away, width=100)
+        # Logo de l'équipe depuis notre dictionnaire
+        logo_away = get_team_logo(away_team)
+        if logo_away:
+            try:
+                st.image(logo_away, width=100)
+            except Exception:
+                st.write("🛫") # Fallback si l'image ne charge pas
         
         st.markdown(f"**🏟️ Stadium:** {format_stadium(stats_away['Venue'], stats_away['Venue City'], stats_away['Venue Capacity'])}")
         
@@ -684,7 +496,7 @@ def show_stats_and_heatmap(home_team, away_team, season_year):
     away_stats = [safe_int(stats_away[label]) for label in stats_labels]
     
     # Charts according to selection
-    if chart_type in ["Bar Chart", "Both"]:
+    if chart_type == "Bar Chart":
         st.markdown("#### 📊 Bar Chart")
         fig_bar, ax_bar = plt.subplots(figsize=(12, 6))
         fig_bar.patch.set_facecolor('#0E1117')
@@ -719,7 +531,7 @@ def show_stats_and_heatmap(home_team, away_team, season_year):
         
         st.pyplot(fig_bar)
     
-    if chart_type in ["Radar Chart", "Both"]:
+    elif chart_type == "Radar Chart":
         st.markdown("#### 🕸️ Radar Chart")
         from math import pi
         
