@@ -1,5 +1,11 @@
 import pandas as pd
 import logging
+import sys
+import os
+
+# Add the project root to Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
 from src.backend.registry.downloader_registry import DOWNLOADER_REGISTRY
 from src.backend.registry.transformer_registry import TRANSFORMER_REGISTRY
 from src.backend.cleaner.cleaner import DataCleaner
