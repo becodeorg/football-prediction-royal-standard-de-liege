@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 """
 Football Prediction App - Clean Architecture Version
 A streamlit application for predicting Belgian Pro League matches.
@@ -219,3 +220,54 @@ def main():
 # -------------------- Run Application --------------------
 if __name__ == "__main__":
     main()
+=======
+import streamlit as st
+import logging
+
+from src.frontend.styles.app_styles import AppStyle
+from src.frontend.components.predictor import MatchPrediction
+from config import settings
+from utils.logger_config import configure_logging
+from utils.data_io import load_model
+
+configure_logging()
+logger = logging.getLogger(__name__)
+
+
+class FootballPredictorApp:
+    """
+    Main class to launch the Streamlit-based football match predictor app.
+    This class is responsible for loading the model, rendering the UI,
+    and handling user interaction.
+    """
+
+    def __init__(self):
+        self.model = load_model(filename="trained_model.joblib")
+        self.predictor = MatchPrediction(self.model)
+
+    def run(self) -> None:
+        """
+        Run the Streamlit application.
+        Renders UI components, captures user input, and displays prediction.
+        :return: None
+        """
+        AppStyle.apply_background_color('#87CEEB')
+        AppStyle.center_title('Football Belgium League Predictor')
+
+        # Render team selection form
+        self.predictor.input_form.render()
+
+        # Center the "Predict" button using columns
+        col1, col2, col3 = st.columns([2, 1, 2])
+        with col2:
+            if st.button("Predict"):
+                prediction = self.predictor.handle_prediction()
+                AppStyle.show_prediction_block(prediction)
+
+        AppStyle.add_footer("Красавчик")
+
+
+if __name__ == "__main__":
+    app = FootballPredictorApp()
+    app.run()
+>>>>>>> Stashed changes
