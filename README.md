@@ -18,9 +18,12 @@ football-predictor/
 │    │   │    ├── cleaner.py        
 │    │   │    └── cleaning_config.py  
 │    │   │
-│    │   ├── model/  
+│    │   ├── model/
+│    │   │    ├── trained_model/
+│    │   │    │      └── trained.joblib 
 │    │   │    └── base_predictor.py 
 │    │   │
+│    │   ├── trainer_pipeline.py
 │    │   └── data_pipeline.py
 │    │
 │    └── frontend/                       
@@ -32,6 +35,7 @@ football-predictor/
 │  
 ├── data/                       # data storage
 │   ├── prepared/
+│   │    └── data.csv
 │   └── raw/                   
 │  
 ├── utils/  

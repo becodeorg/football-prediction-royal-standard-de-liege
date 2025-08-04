@@ -25,3 +25,6 @@ Thumbs.db
 
 # Tests
 tests/
+
+# Credentials files
+credentials/

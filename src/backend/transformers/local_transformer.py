@@ -46,6 +46,8 @@ class StatsSummary:
     avg_points: Optional[float]
     avg_scored: Optional[float]
     avg_conceded: Optional[float]
+    goal_diff: Optional[float]
+    win_rate: Optional[float]
 
 
 @dataclass
@@ -61,6 +63,8 @@ class FormFeatures:
     form_last_5: list[Optional[float]] = field(default_factory=list)
     goals_avg: list[Optional[float]] = field(default_factory=list)
     conceded_avg: list[Optional[float]] = field(default_factory=list)
+    goal_diff: list[Optional[float]] = field(default_factory=list)
+    win_rate: list[Optional[float]] = field(default_factory=list)
 
 
 class LocalTransformer(BaseTransformer):
@@ -139,26 +143,44 @@ class LocalTransformer(BaseTransformer):
         self._check_required_columns(df)
 
         team_history: defaultdict = defaultdict(list)
+        h2h_form = []
+        h2h_diff = []
+
+        for _, row in df.iterrows():
+            form, diff = self._get_last_n_head2head(df, row["HomeTeam"], row["AwayTeam"], row["Date"])
+            h2h_form.append(form)
+            h2h_diff.append(diff)
+
         home_features, away_features = self._calculate_form_features(
             df=df,
             team_history=team_history
         )
 
         df_transformed = pd.DataFrame({
-            "date": df["Date"],
-            "home_team": df["HomeTeam"],
-            "away_team": df["AwayTeam"],
-            "home_goals": df["FTHG"],
-            "away_goals": df["FTAG"],
-            "home_form_last_5": home_features.form_last_5,
-            "away_form_last_5": away_features.form_last_5,
-            "home_goals_avg": home_features.goals_avg,
-            "away_goals_avg": away_features.goals_avg,
-            "home_conceded_avg": home_features.conceded_avg,
-            "away_conceded_avg": away_features.conceded_avg,
-            "competition": df["Div"],
-            "season": df["Date"].apply(self._get_season),
-            "result": df["FTR"].map({"H": 1, "D": 0, "A": -1}),
+            "Date": df["Date"],
+            "HomeTeam": df["HomeTeam"],
+            "AwayTeam": df["AwayTeam"],
+            "FTHG": df["FTHG"],
+            "FTAG": df["FTAG"],
+
+            # Form features (last 5)
+            "home_form_last5": home_features.form_last_5,
+            "away_form_last5": away_features.form_last_5,
+            "home_goals_scored_last5": home_features.goals_avg,
+            "away_goals_scored_last5": away_features.goals_avg,
+            "home_goals_conceded_last5": home_features.conceded_avg,
+            "away_goals_conceded_last5": away_features.conceded_avg,
+            "home_goals_diff_last5": home_features.goal_diff,
+            "away_goals_diff_last5": away_features.goal_diff,
+            "home_win_rate_last5": home_features.win_rate,
+            "away_win_rate_last5": away_features.win_rate,
+
+            # Head-to-head features
+            "head2head_form_last3": h2h_form,
+            "head2head_goal_diff_last3": h2h_diff,
+
+            # Results
+            "FTR": df["FTR"].map({"H": 1, "D": 0, "A": -1}),
         })
 
         logger.info("Transformed DataFrame successfully built.")
@@ -194,16 +216,19 @@ class LocalTransformer(BaseTransformer):
         last_5 = history[-5:]
 
         if not last_5:
-            return StatsSummary(None, None, None)
+            return StatsSummary(None, None, None, None, None)
 
         points = [x.points for x in last_5]
         scored = [x.scored for x in last_5]
         conceded = [x.conceded for x in last_5]
+        wins = [1 if x.points == 3 else 0 for x in last_5]
 
         return StatsSummary(
             avg_points=sum(points) / len(points),
             avg_scored=sum(scored) / len(scored),
             avg_conceded=sum(conceded) / len(conceded),
+            goal_diff=(sum(scored) - sum(conceded)) / len(last_5),
+            win_rate=sum(wins) / len(last_5)
         )
 
     def _calculate_form_features(
@@ -242,6 +267,12 @@ class LocalTransformer(BaseTransformer):
             home_features.conceded_avg.append(home_stats.avg_conceded)
             away_features.conceded_avg.append(away_stats.avg_conceded)
 
+            home_features.goal_diff.append(home_stats.goal_diff)
+            away_features.goal_diff.append(away_stats.goal_diff)
+
+            home_features.win_rate.append(home_stats.win_rate)
+            away_features.win_rate.append(away_stats.win_rate)
+
             self._update_team_history(
                 team_history=team_history,
                 team=home,
@@ -268,6 +299,36 @@ class LocalTransformer(BaseTransformer):
             scored=scored,
             conceded=conceded
         ))
+
+    @staticmethod
+    def _get_last_n_head2head(df: pd.DataFrame, team1: str, team2: str, current_date: pd.Timestamp, n: int = 3):
+        mask = (
+                       ((df["HomeTeam"] == team1) & (df["AwayTeam"] == team2)) |
+                       ((df["HomeTeam"] == team2) & (df["AwayTeam"] == team1))
+               ) & (df["Date"] < current_date)
+        h2h_matches = df.loc[mask].sort_values("Date", ascending=False).head(n)
+
+        results = []
+        goal_diff_total = 0
+
+        for _, row in h2h_matches.iterrows():
+            if row["HomeTeam"] == team1:
+                goals_for = row["FTHG"]
+                goals_against = row["FTAG"]
+                result = row["FTR"]
+            else:
+                goals_for = row["FTAG"]
+                goals_against = row["FTHG"]
+                result = "H" if row["FTR"] == "A" else "A" if row["FTR"] == "H" else "D"
+
+            points = RESULT_POINTS.get((result, True), 0)
+            goal_diff_total += goals_for - goals_against
+            results.append(points)
+
+        avg_result = sum(results) / len(results) if results else None
+        avg_goal_diff = goal_diff_total / len(results) if results else None
+
+        return avg_result, avg_goal_diff
 
     @staticmethod
     def _get_season(date: pd.Timestamp) -> str:
