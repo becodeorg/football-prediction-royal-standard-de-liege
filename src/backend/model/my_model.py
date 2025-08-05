@@ -1,5 +1,7 @@
 import pandas as pd
 import logging
+import sys
+import os
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
@@ -9,6 +11,11 @@ from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import classification_report, accuracy_score
+
+# Add the project root to Python path     (For Local Testing only if using VS Code)
+# project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
+# sys.path.insert(0, project_root)
+
 from utils.data_io import load_csv
 from utils.logger_config import configure_logging
 
@@ -182,25 +189,25 @@ class ModelTrainer:
 
 if __name__ == '__main__':
     df = load_csv(filedir="prepared", filename="B1_old.csv")
-    columns_list = [column for column in df.columns if column not in ("Date", "FTR")]
-    print(columns_list)
+    # columns_list = [column for column in df.columns if column not in ("Date", "FTR")]
+    # print(columns_list)
     #
-    # model_trainer = ModelTrainer(df, "FTR")
-    # model_trainer.split_data()
-    #
-    # model_trainer.find_best_hyperparameters(
-    #     model=RandomForestClassifier(random_state=42, class_weight="balanced"),
-    #     param_grid={
-    #         "model__n_estimators": [100, 200],
-    #         "model__max_depth": [10, 20],
-    #         "model__min_samples_leaf": [1, 3]
-    #     },
-    #     scoring="f1_macro",
-    #     cv=5
-    # )
-    # model_trainer.train()
-    # # save_model(model_trainer.model, "RFC_Belgium_league_model.joblib")
-    # model_trainer.evaluate()
-    #
-    # predictions = model_trainer.predict()
-    # print(predictions)
+    model_trainer = ModelTrainer(df, "FTR")
+    model_trainer.split_data()
+    
+    model_trainer.find_best_hyperparameters(
+        model=RandomForestClassifier(random_state=42, class_weight="balanced"),
+        param_grid={
+            "model__n_estimators": [100, 200],
+            "model__max_depth": [10, 20],
+            "model__min_samples_leaf": [1, 3]
+        },
+        scoring="f1_macro",
+        cv=5
+    )
+    model_trainer.train()
+    # save_model(model_trainer.model, "RFC_Belgium_league_model.joblib")
+    model_trainer.evaluate()
+    
+    predictions = model_trainer.predict()
+    print(predictions)
