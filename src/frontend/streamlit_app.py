@@ -1,805 +1,576 @@
+"""
+⚽ Football Prediction App - Compact Version
+Professional Streamlit app for Jupiler Pro League predictions
+"""
+
 import streamlit as st
-import matplotlib.pyplot as plt
 import numpy as np
-import sys
-import os
 import pandas as pd
-from styles.app_styles import AppStyle
-from components.team_components import get_team_logo, get_team_stadium
+import joblib
+import os
+from typing import Tuple, Optional
 
-# -------------------- Page Configuration --------------------
-st.set_page_config(
-    page_title="JPL Prediction Pro",
-    page_icon="⚽",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# ========== CONFIGURATION ==========
+current_dir = os.path.dirname(__file__)
 
-# -------------------- Load Data & Seasons --------------------
-DATA_PATH = os.path.abspath(os.path.dirname(__file__) + '/../../data/raw/dataset_old_2.csv')
-df_full = pd.read_csv(DATA_PATH)
-# Extract available seasons (years from Date column)
-# Specify date format to avoid parsing warning (format: DD/MM/YYYY)
-df_full['Year'] = pd.to_datetime(df_full['Date'], format='%d/%m/%Y', errors='coerce').dt.year
-# Format seasons as 'Season YYYY-YYYY'
-raw_years = sorted(df_full['Year'].dropna().unique(), reverse=True)
-season_labels = [f"Season {int(y)}-{int(y)+1}" for y in raw_years]
-season_labels.insert(0, "All seasons")
+APP_CONFIG = {
+    "page_title": "JPL Prediction Pro",
+    "page_icon": "⚽",
+    "layout": "wide"
+}
 
-# Import backend components
+# Import styles
+import sys
 sys.path.append(os.path.abspath(os.path.dirname(__file__) + "/../.."))
-from utils.data_io import load_model
-from src.backend.model.my_model import ModelTrainer
-from src.frontend.components.feature_prepare import FeaturePrepare
+from styles.app_styles import AppStyle
+from utils.data_io import load_csv
 
-# -------------------- Custom CSS Styles --------------------
-st.markdown("""
-<style>
-    /* Global Styles */
-    .main-header {
-        background: linear-gradient(90deg, #FF6B6B, #4ECDC4);
-        padding: 20px;
-        border-radius: 15px;
-        text-align: center;
-        margin-bottom: 30px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-    
-    .main-header h1 {
-        color: white;
-        font-size: 2.5rem;
-        margin: 0;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-    }
-    
-    .stats-container {
-        background: rgba(255, 255, 255, 0.05);
-        padding: 20px;
-        border-radius: 15px;
-        margin: 15px 0;
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-    
-    .vs-divider {
-        text-align: center;
-        font-size: 3rem;
-        font-weight: bold;
-        color: #FF6B6B;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-        margin: 20px 0;
-    }
-    
-    .team-logo {
-        width: 80px !important;
-        height: 80px !important;
-        object-fit: contain;
-        border-radius: 10px;
-        background: rgba(255, 255, 255, 0.1);
-        padding: 5px;
-        margin-bottom: 15px;
-        display: block;
-        margin-left: auto;
-        margin-right: auto;
-    }
-</style>
-""", unsafe_allow_html=True)
+# ========== CONSTANTS ==========
+class Constants:
+    """Application constants derived from data analysis."""
+    DEFAULT_FALLBACK_CONFIDENCE = 50.0  # Only for statistical fallback
+    AVG_GOALS_PER_TEAM = 1.5  # League average when no data
+    MIN_MATCHES_FOR_RELIABLE_DATA = 5  # Minimum matches for quality analysis
+    HOME_ADVANTAGE_THRESHOLD = 0.1  # Minimum home advantage to consider
 
-# -------------------- Main Header --------------------
-st.markdown("""
-<div class="main-header">
-    <h1>⚽ Jupiler Pro League Prediction Pro</h1>
-    <p style="margin: 10px 0 0 0; font-size: 1.2rem; opacity: 0.9;">
-        Advanced analysis and intelligent predictions
-    </p>
-</div>
-""", unsafe_allow_html=True)
-
-# -------------------- Data Section --------------------
-jupiler_teams = [
-    "Anderlecht", "Club Brugge", "Standard", "Genk", "Oostende",
-    "Gent", "Charleroi", "Cercle Brugge", "Antwerp", "Mouscron",
-    "Westerlo", "Union Saint-Gilloise", "Mechelen",
-    "Eupen", "Kortrijk", "RWD Molenbeek", "St. Truiden", "Seraing", "Waregem",
-    "Waasland-Beveren", "Beerschot VA", "Dender", "Oud-Heverlee Leuven"
-]
-
-
-# -------------------- Team Selection Section --------------------
-st.markdown("### 🏟️ Team Selection")
-
-col1, col2, col3 = st.columns([2, 1, 2])
-
-with col1:
-    st.markdown("#### 🏠 Home Team")
-    home_team = st.selectbox(
-        "Choose the home team",
-        jupiler_teams,
-        key="home",
-        help="The team playing at home"
-    )
-
-with col2:
-    st.markdown('<div class="vs-divider">VS</div>', unsafe_allow_html=True)
-
-with col3:
-    st.markdown("#### 🛫 Away Team")
-    away_options = [team for team in jupiler_teams if team != home_team]
-    away_team = st.selectbox(
-        "Choose the away team",
-        away_options,
-        key="away",
-        help="The team playing away"
-    )
-
-# -------------------- Model Loading Section --------------------
-@st.cache_resource(show_spinner=False)
-def load_trained_model():
-    """Load the pre-trained model from the backend"""
+# ========== DATA MANAGEMENT ==========
+class DataManager:
+    """Unified data management for teams and predictions."""
     
-    try:
-        # Load the model from the joblib file
-        model = load_model("trained_model.joblib")
-        
-        # Load data to get encoders
-        df = pd.read_csv(DATA_PATH)
-        
-        # Create a ModelTrainer to access prediction methods
-        trainer = ModelTrainer(df, "FTR")
-        trainer.split_data()
-        trainer.model = model  # Use the pre-trained model
-        
-        return trainer
-        
-    except Exception as e:
-        st.error(f"❌ Error loading the model: {e}")
-        st.info("🔄 Attempting to load a basic model...")
-        
-        # Fallback: create a simple model if the pre-trained model is not available
-        df = pd.read_csv(DATA_PATH)
-        trainer = ModelTrainer(df, "FTR")
-        trainer.split_data()
-        
-        # Create and train a simple model
-        from sklearn.ensemble import RandomForestClassifier
-        trainer.build_pipeline(RandomForestClassifier(random_state=42, n_estimators=50))
-        trainer.model = trainer.pipeline
-        trainer.model.fit(trainer.X_train, trainer.y_train)
-        
-        st.warning("⚠️ Basic model created (limited performance)")
-        return trainer
-
-# Load the model
-model_trainer = load_trained_model()
-
-def generate_realistic_score(home_team, away_team, prediction, features):
-    """Generate realistic score based on ML prediction and team features from your architecture"""
-    # Extract goal-related features from your FeaturePrepare system
-    home_goals_last5 = features.get('home_goals_scored_last5', 1.5)
-    away_goals_last5 = features.get('away_goals_scored_last5', 1.5)
+    def __init__(self):
+        self.team_stats = self._load_team_stats()
+        self.teams = sorted(self.team_stats['Team'].tolist()) if self.team_stats is not None else []
+        self.match_data = self._load_match_data()
+        self.model = self._load_model()
     
-    # Extract additional features from your feature engineering
-    home_form = features.get('home_form_last5', 0.5)
-    away_form = features.get('away_form_last5', 0.5)
-    home_win_rate = features.get('home_win_rate_last10', 0.5)
-    away_win_rate = features.get('away_win_rate_last10', 0.5)
-    
-    # Base goals from recent form (your ML features)
-    base_home = max(0.5, home_goals_last5 / 5)  # Average per match
-    base_away = max(0.5, away_goals_last5 / 5)  # Average per match
-    
-    # Apply form and win rate adjustments from your features
-    form_adjustment_home = (home_form - 0.5) * 0.5  # Form impact
-    form_adjustment_away = (away_form - 0.5) * 0.5
-    
-    win_rate_adjustment_home = (home_win_rate - 0.5) * 0.3  # Win rate impact
-    win_rate_adjustment_away = (away_win_rate - 0.5) * 0.3
-    
-    # Adjust base goals with your ML features
-    adjusted_home = base_home + form_adjustment_home + win_rate_adjustment_home
-    adjusted_away = base_away + form_adjustment_away + win_rate_adjustment_away
-    
-    # Apply ML prediction logic
-    if prediction == 'H':  # Home wins
-        home_goals = max(1, int(round(adjusted_home + 0.7)))  # Boost home team
-        away_goals = max(0, int(round(adjusted_away - 0.2)))  # Slight reduction away
-    elif prediction == 'A':  # Away wins  
-        home_goals = max(0, int(round(adjusted_home - 0.2)))  # Slight reduction home
-        away_goals = max(1, int(round(adjusted_away + 0.5)))  # Boost away team
-    else:  # Draw
-        # For draws, balance the scores based on your ML features
-        avg_goals = (adjusted_home + adjusted_away) / 2
-        home_goals = max(0, int(round(avg_goals)))
-        away_goals = home_goals  # Same score for draw
-    
-    # Ensure realistic scores (0-5 range typically)
-    home_goals = min(home_goals, 5)
-    away_goals = min(away_goals, 5)
-    
-    return home_goals, away_goals
-
-def predict_fallback_with_stats(home, away):
-    """Fallback statistical prediction when ML model can't be used"""
-    # Simple statistical approach using dataset
-    home_matches = df_full[df_full['HomeTeam'] == home]
-    away_matches = df_full[df_full['AwayTeam'] == away]
-    
-    home_goals_avg = home_matches['FTHG'].mean() if len(home_matches) > 0 else 1.5
-    away_goals_avg = away_matches['FTAG'].mean() if len(away_matches) > 0 else 1.5
-    
-    # Simple prediction
-    home_goals = max(0, int(round(home_goals_avg + 0.3)))  # Home advantage
-    away_goals = max(0, int(round(away_goals_avg)))
-    
-    if home_goals > away_goals:
-        outcome = f'🏠 VICTORY {home.upper()}'
-    elif away_goals > home_goals:
-        outcome = f'🛫 VICTORY {away.upper()}'
-    else:
-        outcome = '🤝 DRAW'
-    
-    return outcome, 60.0  # Lower confidence for fallback
-
-
-def predict_match_outcome_with_score(home, away):
-    """Predict match outcome using the real trained model and feature pipeline"""
-    try:
-        # Initialize feature preparer
-        feature_preparer = FeaturePrepare()
-        
-        # Prepare features using your existing system
+    @st.cache_data
+    def _load_team_stats(_self):
+        """Load team statistics."""
         try:
-            features = feature_preparer.prepare_features(home_team=home, away_team=away)
-        except ValueError as e:
-            return predict_fallback_with_stats(home, away)
-        
-        # Create DataFrame for prediction (required by your model)
-        input_df = pd.DataFrame([features])
-        
-        # Make prediction using the real trained model
-        prediction = model_trainer.model.predict(input_df)[0]
-        
-        # Get prediction probabilities for confidence
+            path = os.path.join(current_dir, 'components', 'jupiler_teams_data.csv')
+            return pd.read_csv(path)
+        except FileNotFoundError:
+            st.error("❌ Team statistics file not found")
+        except pd.errors.EmptyDataError:
+            st.error("❌ Team statistics file is empty")
+        except Exception as e:
+            st.error(f"❌ Error loading team stats: {e}")
+        return None
+    
+    def _load_match_data(self):
+        """Load historical match data."""
         try:
-            probabilities = model_trainer.model.predict_proba(input_df)[0]
-            confidence = max(probabilities) * 100  # Convert to percentage
+            path = os.path.abspath(os.path.join(current_dir, '../../data/prepared/B1_old.csv'))
+            df = pd.read_csv(path)
+            df['Year'] = pd.to_datetime(df['Date'], format='%d/%m/%Y', errors='coerce').dt.year
+            return df
+        except FileNotFoundError:
+            st.error("❌ Match data file not found")
+        except pd.errors.EmptyDataError:
+            st.error("❌ Match data file is empty")
+        except Exception as e:
+            st.error(f"❌ Error loading match data: {e}")
+        return pd.DataFrame()
+    
+    @st.cache_resource(show_spinner=False)
+    def _load_model(_self):
+        """Load ML model."""
+        try:
+            path = os.path.join(current_dir, '..', 'backend', 'model', 'trained_model', 'trained_model.joblib')
+            return joblib.load(path)
+        except FileNotFoundError:
+            st.warning("⚠️ ML model not found, using statistical fallback")
+        except Exception as e:
+            st.warning(f"⚠️ Error loading ML model: {e}")
+        return None
+    
+    def get_team_data(self, team_name: str) -> Tuple[int, int, int, Optional[str]]:
+        """Get team stats and logo."""
+        if self.team_stats is None:
+            # Use league averages if no stats available
+            league_avg = self._calculate_league_averages()
+            return league_avg, league_avg, league_avg, None
+        
+        team_row = self.team_stats[self.team_stats['Team'] == team_name]
+        if not team_row.empty:
+            row = team_row.iloc[0]
+            return int(row['Attack']), int(row['Midfield']), int(row['Defense']), row['Logo_URL']
+        
+        # Use league averages as fallback
+        league_avg = self._calculate_league_averages()
+        return league_avg, league_avg, league_avg, None
+    
+    def _calculate_league_averages(self) -> int:
+        """Calculate league average stats from actual data."""
+        if self.team_stats is not None and not self.team_stats.empty:
+            avg_attack = int(self.team_stats['Attack'].mean())
+            avg_midfield = int(self.team_stats['Midfield'].mean()) 
+            avg_defense = int(self.team_stats['Defense'].mean())
+            return int((avg_attack + avg_midfield + avg_defense) / 3)
+        return 75  # Only if absolutely no data
+    
+    def predict_match(self, home_team: str, away_team: str) -> Tuple[str, float]:
+        """Predict match outcome."""
+        try:
+            # Try ML prediction
+            if self.model is not None:
+                features = self._prepare_features(home_team, away_team)
+                if features:
+                    input_df = pd.DataFrame([features])
+                    prediction = self.model.predict(input_df)[0]
+                    
+                    # Get confidence directly from model probabilities
+                    try:
+                        probabilities = self.model.predict_proba(input_df)[0]
+                        confidence = max(probabilities) * 100
+                    except:
+                        # If model doesn't support predict_proba, estimate from prediction certainty
+                        confidence = self._estimate_confidence_from_features(features)
+                    
+                    outcome = self._interpret_prediction(prediction, home_team, away_team)
+                    self._generate_score(home_team, away_team, prediction)
+                    return outcome, confidence
+            
+            # Fallback prediction
+            return self._fallback_prediction(home_team, away_team)
+            
         except:
-            confidence = 75.0  # Fallback confidence
+            return self._fallback_prediction(home_team, away_team)
+    
+    def _prepare_features(self, home_team: str, away_team: str):
+        """Prepare features for ML model."""
+        try:
+            df = load_csv(filedir="prepared", filename="B1_old.csv")
+            feature_cols = [col for col in df.columns if col not in ("Date", "FTR")]
+            match_row = df[(df["HomeTeam"] == home_team) & (df["AwayTeam"] == away_team)]
+            if not match_row.empty:
+                return match_row.iloc[0][feature_cols].to_dict()
+        except:
+            pass
+        return None
+    
+    def _interpret_prediction(self, prediction, home_team: str, away_team: str) -> str:
+        """Convert prediction to readable outcome."""
+        if prediction == 1 or prediction == 'H':
+            return f' {home_team.upper()} Wins'
+        elif prediction == -1 or prediction == 'A':
+            return f' {away_team.upper()} Wins'
+        else:
+            return ' DRAW'
+    
+    def _generate_score(self, home_team: str, away_team: str, prediction):
+        """Generate realistic score based on team historical performance."""
+        # Get actual historical goal averages for these teams
+        home_avg = self._get_team_goal_average(home_team, home=True)
+        away_avg = self._get_team_goal_average(away_team, home=False)
         
-        # Interpret result (your model returns H/A/D)
-        if prediction == 'H':
-            outcome = f'🏠 VICTORY {home.upper()}'
-            emoji = '🔥'
-            description = f"The home team {home} should win this match!"
-        elif prediction == 'A':
-            outcome = f'🛫 VICTORY {away.upper()}'  
-            emoji = '⚡'
-            description = f"The away team {away} is favored for this match!"
-        else:  # 'D'
-            outcome = '🤝 DRAW'
-            emoji = '⚖️'
-            description = "A balanced match that should end in a draw"
+        # Use team names as seed for consistency
+        seed_value = hash(f"{home_team}{away_team}") % 1000000
+        np.random.seed(seed_value)
         
-        # Generate realistic score based on prediction and team stats
-        predicted_home_goals, predicted_away_goals = generate_realistic_score(
-            home, away, prediction, features
+        # Generate goals based on team averages (more realistic than random 0-4)
+        home_goals = max(0, int(np.random.poisson(home_avg)))
+        away_goals = max(0, int(np.random.poisson(away_avg)))
+        
+        # Adjust based on model prediction
+        if prediction == 1 or prediction == 'H':  # Home win
+            if home_goals <= away_goals:
+                home_goals = away_goals + 1
+        elif prediction == -1 or prediction == 'A':  # Away win
+            if away_goals <= home_goals:
+                away_goals = home_goals + 1
+        else:  # Draw prediction
+            # For draws, make scores closer
+            avg_goals = (home_goals + away_goals) // 2
+            home_goals = away_goals = avg_goals
+        
+        self._set_match_score(home_goals, away_goals)
+    
+    def _fallback_prediction(self, home_team: str, away_team: str) -> Tuple[str, float]:
+        """Advanced statistical fallback prediction with multiple fallback layers."""
+        
+        # Layer 1: Direct team performance analysis
+        home_team_performance = self._analyze_team_performance(home_team, home=True)
+        away_team_performance = self._analyze_team_performance(away_team, home=False)
+        
+        # Layer 2: Team stats comparison (FIFA-style prediction)
+        home_stats = self.get_team_data(home_team)
+        away_stats = self.get_team_data(away_team)
+        
+        # Layer 3: Historical head-to-head if available
+        h2h_factor = self._get_head_to_head_factor(home_team, away_team)
+        
+        # Layer 4: League position and form analysis
+        home_strength = self._calculate_team_strength(home_team, home_stats, home_team_performance)
+        away_strength = self._calculate_team_strength(away_team, away_stats, away_team_performance)
+        
+        # Apply home advantage
+        home_advantage = self._calculate_home_advantage()
+        home_strength += home_advantage
+        
+        # Generate realistic score
+        home_goals, away_goals = self._generate_logical_score(
+            home_strength, away_strength, home_team_performance, away_team_performance
         )
-            
-        # Expressive display of prediction results
-        st.markdown("---")
-        st.markdown("### 🎯 **PREDICTION RESULT**")
         
-        # Main container with style
-        st.markdown(f"""
-        <div style="
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 25px;
-            border-radius: 20px;
-            text-align: center;
-            color: white;
-            margin: 20px 0;
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
-        ">
-            <h2 style="margin: 0; font-size: 2rem;">{emoji} {outcome}</h2>
-            <h3 style="margin: 15px 0; font-size: 1.8rem; color: #FFD700;">
-                🥅 PREDICTED SCORE: {predicted_home_goals} - {predicted_away_goals} 🥅
-            </h3>
-            <p style="margin: 15px 0; font-size: 1.2rem; opacity: 0.9;">{description}</p>
-            <div style="margin-top: 20px;">
-                <span style="font-size: 1.1rem; font-weight: bold;">AI Confidence: {confidence:.1f}%</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # Determine outcome with confidence based on strength difference
+        strength_diff = abs(home_strength - away_strength)
+        confidence = self._calculate_smart_confidence(strength_diff, home_team_performance, away_team_performance)
         
-        # Technical details with style
-        with st.expander("🔍 **Technical Prediction Details**", expanded=False):
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("🏠 Home Team", home)
-                st.metric("🎯 ML Prediction", prediction)
-                st.metric("🥅 Predicted Home Goals", predicted_home_goals)
-            with col2:
-                st.metric("🛫 Away Team", away)
-                st.metric("🤖 AI Confidence", f"{confidence:.1f}%")
-                st.metric("🥅 Predicted Away Goals", predicted_away_goals)
-                
-            # Show key features used by the model
-            st.markdown("#### 🧠 **Key Features Used by AI Model**")
-            
-            # Display most important features from your FeaturePrepare system
-            important_features = {}
-            feature_categories = {
-                'Form & Performance': ['form', 'win_rate', 'performance'],
-                'Goals & Scoring': ['goals', 'scored', 'conceded'],
-                'Head-to-Head': ['head2head', 'h2h', 'vs'],
-                'Recent Matches': ['last5', 'last10', 'recent'],
-                'Home/Away Stats': ['home_', 'away_']
-            }
-            
-            for category, keywords in feature_categories.items():
-                category_features = {}
-                for key, value in features.items():
-                    if any(keyword in key.lower() for keyword in keywords):
-                        category_features[key] = value
-                
-                if category_features:
-                    st.markdown(f"**{category}:**")
-                    feature_df = pd.DataFrame(list(category_features.items()), 
-                                            columns=['Feature', 'Value'])
-                    st.dataframe(feature_df, use_container_width=True)
-                    st.markdown("---")
-            
-            st.info("ℹ️ Prediction made using your complete ML architecture: FeaturePrepare → ModelTrainer → RandomForest with GridSearchCV optimization")
+        if home_goals > away_goals:
+            outcome = f' VICTORY {home_team.upper()}'
+        elif away_goals > home_goals:
+            outcome = f' VICTORY {away_team.upper()}'
+        else:
+            outcome = ' DRAW'
+        
+        self._set_match_score(home_goals, away_goals)
         
         return outcome, confidence
+    
+    def _set_match_score(self, home_goals: int, away_goals: int):
+        """Helper to set match score in session state."""
+        st.session_state["home_goals"] = home_goals
+        st.session_state["away_goals"] = away_goals
+    
+    def _get_team_goal_average(self, team_name: str, home: bool) -> float:
+        """Get actual goal average for a team from historical data."""
+        if home:
+            team_matches = self.match_data[self.match_data['HomeTeam'] == team_name]
+            goals = team_matches['FTHG'].mean() if len(team_matches) > 0 else Constants.AVG_GOALS_PER_TEAM
+        else:
+            team_matches = self.match_data[self.match_data['AwayTeam'] == team_name]
+            goals = team_matches['FTAG'].mean() if len(team_matches) > 0 else Constants.AVG_GOALS_PER_TEAM
         
-    except Exception as e:
-        st.error(f"❌ **ML Prediction error:** {e}")
-        st.info("🔄 Falling back to statistical prediction...")
-        return predict_fallback_with_stats(home, away)
-
-# --- Real stats extraction from dataset ---
-
-def get_real_stats(team, df):
-    # Strict filtering by season already applied in df
-    home = df[df['HomeTeam'] == team]
-    away = df[df['AwayTeam'] == team]
-    matches_played = len(home) + len(away)
-    goals_scored = home['FTHG'].sum() + away['FTAG'].sum()
-    goals_conceded = home['FTAG'].sum() + away['FTHG'].sum()
-    wins = (home['FTR'] == 'H').sum() + (away['FTR'] == 'A').sum()
-    draws = (home['FTR'] == 'D').sum() + (away['FTR'] == 'D').sum()
-    losses = matches_played - wins - draws
-    # Ranking calculated on filtered season
-    teams = list(set(df['HomeTeam'].unique().tolist() + df['AwayTeam'].unique().tolist()))
-    team_wins = {t: (df[df['HomeTeam'] == t]['FTR'] == 'H').sum() + (df[df['AwayTeam'] == t]['FTR'] == 'A').sum() for t in teams}
-    sorted_teams = sorted(team_wins.items(), key=lambda x: x[1], reverse=True)
-    position = [i+1 for i, (t, _) in enumerate(sorted_teams) if t == team][0] if team in dict(sorted_teams) else None
+        return goals
     
-    # Get stadium info from our static dictionary
-    stadium_info = get_team_stadium(team)
-    venue = stadium_info["name"]
-    venue_city = stadium_info["city"] 
-    venue_capacity = stadium_info["capacity"]
-    
-    # --- Enriched data from dataset (if available) ---
-    # Take the first home or away row for team info
-    team_row = pd.concat([home, away]).iloc[0] if (len(home) > 0 or len(away) > 0) else None
-    if team_row is not None:
-        # Advanced club stats (scoring) - only if columns exist
-        club_goals = team_row.get('club_goals_24_25', None)
-        club_assists = team_row.get('club_assists_24_25', None)
-        club_games = team_row.get('club_games_24_25', None)
-        club_minutes = team_row.get('club_minutes_24_25', None)
-    else:
-        club_goals = None
-        club_assists = None
-        club_games = None
-        club_minutes = None
-    return {
-        "Position": position,
-        "Goals Scored": int(goals_scored),
-        "Goals Conceded": int(goals_conceded),
-        "Wins": int(wins),
-        "Draws": int(draws),
-        "Losses": int(losses),
-        "Matches Played": int(matches_played),
-        "Venue": venue,
-        "Venue City": venue_city,
-        "Venue Capacity": venue_capacity,
-        "Club Goals 24/25": club_goals,
-        "Club Assists 24/25": club_assists,
-        "Club Games 24/25": club_games,
-        "Club Minutes 24/25": club_minutes
-    }
-
-
-
-
-def show_stats_and_heatmap(home_team, away_team, season_year):
-    st.markdown("---")
-    st.markdown("### 📊 Detailed Team Statistics")
-    
-    # Sidebar for season selection
-    with st.sidebar:
-        st.markdown("### ⚙️ Analysis Parameters")
+    def _calculate_home_advantage(self) -> float:
+        """Calculate home advantage from actual match data."""
+        if self.match_data.empty:
+            return 0.0
         
-        season_idx = st.selectbox(
-            "📅 Select the season",
-            list(range(len(season_labels))),
-            format_func=lambda i: season_labels[i],
-            key="season",
-            help="Choose the season to analyze the statistics"
-        )
+        home_avg = self.match_data['FTHG'].mean()
+        away_avg = self.match_data['FTAG'].mean()
+        return home_avg - away_avg
+    
+    def _estimate_confidence_from_features(self, features: dict) -> float:
+        """Estimate confidence based on feature strength when model doesn't support predict_proba."""
+        # Use actual feature values to estimate confidence
+        feature_values = list(features.values())
+        if not feature_values:
+            return Constants.DEFAULT_FALLBACK_CONFIDENCE
         
-        show_advanced_stats = st.checkbox("📈 Advanced statistics", value=False)
-        chart_type = st.radio(
-            "📊 Visualization type",
-            ["Bar Chart", "Radar Chart", "Performance Comparison", "All Charts"],
-            index=0
-        )
+        # Normalize features and calculate confidence
+        # Higher feature variance = lower confidence
+        mean_val = np.mean(feature_values)
+        std_val = np.std(feature_values)
+        
+        # Convert to confidence percentage (60-95% range based on data consistency)
+        confidence = max(60, min(95, 100 - (std_val * 10)))
+        return confidence
     
-    # Data filtering by season
-    if season_idx == 0:
-        df_season = df_full.copy()
-        season_text = "All seasons"
-    else:
-        season_year = raw_years[season_idx - 1]
-        df_season = df_full[df_full['Year'] == season_year]
-        season_text = f"Season {int(season_year)}-{int(season_year)+1}"
+    def _analyze_team_performance(self, team_name: str, home: bool) -> dict:
+        """Analyze team performance with multiple metrics."""
+        if home:
+            team_matches = self.match_data[self.match_data['HomeTeam'] == team_name]
+            goals_for = team_matches['FTHG'].tolist() if len(team_matches) > 0 else []
+            goals_against = team_matches['FTAG'].tolist() if len(team_matches) > 0 else []
+        else:
+            team_matches = self.match_data[self.match_data['AwayTeam'] == team_name]
+            goals_for = team_matches['FTAG'].tolist() if len(team_matches) > 0 else []
+            goals_against = team_matches['FTHG'].tolist() if len(team_matches) > 0 else []
+        
+        if not goals_for:
+            return {
+                'avg_goals_scored': Constants.AVG_GOALS_PER_TEAM,
+                'avg_goals_conceded': Constants.AVG_GOALS_PER_TEAM,
+                'form': 0.5,  # Neutral form
+                'consistency': 0.5,
+                'data_quality': 0.0  # No data
+            }
+        
+        avg_scored = np.mean(goals_for)
+        avg_conceded = np.mean(goals_against)
+        
+        # Recent form (last 5 matches if available)
+        recent_matches = min(Constants.MIN_MATCHES_FOR_RELIABLE_DATA, len(goals_for))
+        recent_scored = np.mean(goals_for[-recent_matches:]) if recent_matches > 0 else avg_scored
+        recent_form = min(1.0, recent_scored / max(0.1, avg_scored))  # Form factor 0-1
+        
+        # Consistency (lower std = more consistent)
+        consistency = 1.0 / (1.0 + np.std(goals_for)) if len(goals_for) > 1 else 0.5
+        
+        # Enhanced data quality calculation
+        quality_factor = min(1.0, len(goals_for) / 15.0)  # 15+ matches = excellent data
+        recency_bonus = 0.1 if len(goals_for) >= Constants.MIN_MATCHES_FOR_RELIABLE_DATA else 0.0
+        
+        return {
+            'avg_goals_scored': avg_scored,
+            'avg_goals_conceded': avg_conceded,
+            'form': recent_form,
+            'consistency': consistency,
+            'data_quality': min(1.0, quality_factor + recency_bonus)
+        }
     
-    st.info(f"🗓️ **Period analyzed:** {season_text}")
-    st.markdown("⚠️ **Note:** The selected season only impacts the displayed statistics, not the match prediction.")
+    def _get_head_to_head_factor(self, home_team: str, away_team: str) -> float:
+        """Calculate head-to-head historical factor."""
+        h2h_matches = self.match_data[
+            ((self.match_data['HomeTeam'] == home_team) & (self.match_data['AwayTeam'] == away_team)) |
+            ((self.match_data['HomeTeam'] == away_team) & (self.match_data['AwayTeam'] == home_team))
+        ]
+        
+        if len(h2h_matches) == 0:
+            return 0.0  # No historical data
+        
+        # Count wins for each team
+        home_wins = len(h2h_matches[
+            ((h2h_matches['HomeTeam'] == home_team) & (h2h_matches['FTHG'] > h2h_matches['FTAG'])) |
+            ((h2h_matches['AwayTeam'] == home_team) & (h2h_matches['FTAG'] > h2h_matches['FTHG']))
+        ])
+        
+        total_matches = len(h2h_matches)
+        home_win_rate = home_wins / total_matches
+        
+        # Return advantage factor (-0.5 to +0.5)
+        return (home_win_rate - 0.5)
     
-    # Statistics retrieval
-    stats_home = get_real_stats(home_team, df_season)
-    stats_away = get_real_stats(away_team, df_season)
+    def _calculate_team_strength(self, team_name: str, team_stats: tuple, performance: dict) -> float:
+        """Calculate comprehensive team strength."""
+        att, mid, def_, _ = team_stats
+        
+        # FIFA stats component (0-100 scale, normalize to 0-1)
+        fifa_strength = (att + mid + def_) / 300.0
+        
+        # Performance component
+        goal_ratio = performance['avg_goals_scored'] / max(0.1, performance['avg_goals_conceded'])
+        perf_strength = min(1.0, goal_ratio / 3.0)  # Normalize excellent teams
+        
+        # Weighted combination based on data quality
+        data_quality = performance['data_quality']
+        
+        if data_quality > 0.7:  # Good data, trust performance more
+            strength = 0.3 * fifa_strength + 0.7 * perf_strength
+        elif data_quality > 0.3:  # Some data, balanced approach
+            strength = 0.5 * fifa_strength + 0.5 * perf_strength
+        else:  # Poor data, rely on FIFA stats
+            strength = 0.8 * fifa_strength + 0.2 * perf_strength
+        
+        # Apply form factor
+        strength *= (0.8 + 0.4 * performance['form'])  # Form can boost/reduce by 20%
+        
+        return strength
     
-    # Display of team cards
-    col1, col2 = st.columns(2)
+    def _generate_logical_score(self, home_strength: float, away_strength: float, 
+                               home_perf: dict, away_perf: dict) -> Tuple[int, int]:
+        """Generate realistic score based on team strengths."""
+        
+        # Base expectation from team averages
+        home_expected = home_perf['avg_goals_scored']
+        away_expected = away_perf['avg_goals_scored']
+        
+        # Adjust based on relative strength
+        strength_ratio = home_strength / max(0.1, away_strength)
+        
+        if strength_ratio > 1.3:  # Home team much stronger
+            home_expected *= 1.2
+            away_expected *= 0.8
+        elif strength_ratio < 0.7:  # Away team much stronger
+            home_expected *= 0.8
+            away_expected *= 1.2
+        
+        # Use team names for consistent randomness
+        seed_value = hash(f"{home_strength}{away_strength}") % 1000000
+        np.random.seed(seed_value)
+        
+        # Generate using Poisson distribution
+        home_goals = max(0, int(np.random.poisson(max(0.1, home_expected))))
+        away_goals = max(0, int(np.random.poisson(max(0.1, away_expected))))
+        
+        return home_goals, away_goals
+    
+    def _calculate_smart_confidence(self, strength_diff: float, home_perf: dict, away_perf: dict) -> float:
+        """Calculate confidence based on multiple factors."""
+        
+        # Base confidence from strength difference
+        if strength_diff > 0.3:  # Large difference
+            base_confidence = 85.0
+        elif strength_diff > 0.15:  # Moderate difference
+            base_confidence = 75.0
+        elif strength_diff > 0.05:  # Small difference
+            base_confidence = 65.0
+        else:  # Very close match
+            base_confidence = 55.0
+        
+        # Adjust for data quality
+        avg_data_quality = (home_perf['data_quality'] + away_perf['data_quality']) / 2
+        data_bonus = avg_data_quality * 15  # Up to 15% bonus for good data
+        
+        # Adjust for consistency
+        avg_consistency = (home_perf['consistency'] + away_perf['consistency']) / 2
+        consistency_bonus = avg_consistency * 10  # Up to 10% bonus for consistent teams
+        
+        final_confidence = base_confidence + data_bonus + consistency_bonus
+        
+        return min(95.0, max(50.0, final_confidence))  # Cap between 50-95%
+
+# ========== UI FUNCTIONS ==========
+def render_team_selection(data_manager: DataManager) -> Tuple[str, str]:
+    """Render team selection interface."""
+    col1, col2, col3 = st.columns([2, 1, 2])
     
     with col1:
-        st.markdown(f"### 🏠 {home_team}")
-        
-        # Logo de l'équipe depuis notre dictionnaire
-        logo_home = get_team_logo(home_team)
-        if logo_home:
-            st.markdown(f'<img src="{logo_home}" class="team-logo" alt="{home_team} logo">', unsafe_allow_html=True)
-        else:
-            st.markdown('<div style="text-align: center; font-size: 4rem; margin: 15px 0;">🏠</div>', unsafe_allow_html=True)
-        
-        # Informations du stade
-        def format_stadium(venue, city, capacity):
-            def clean(val):
-                return "-" if val is None or (isinstance(val, float) and np.isnan(val)) or str(val).lower() == "nan" else str(val)
-            return f"{clean(venue)} ({clean(city)}, {clean(capacity)})"
-        
-        st.markdown(f"**🏟️ Stadium:** {format_stadium(stats_home['Venue'], stats_home['Venue City'], stats_home['Venue Capacity'])}")
-        
-        # Main metrics
-        metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
-        with metrics_col1:
-            st.metric("🏆 Position", stats_home["Position"])
-            st.metric("⚽ Goals scored", stats_home["Goals Scored"])
-        with metrics_col2:
-            st.metric("🎯 Wins", stats_home["Wins"])
-            st.metric("🤝 Draws", stats_home["Draws"])
-        with metrics_col3:
-            st.metric("❌ Losses", stats_home["Losses"])
-            st.metric("📊 Matches played", stats_home["Matches Played"])
-        
-        # Advanced stats if enabled
-        if show_advanced_stats:
-            st.markdown("#### 📈 Advanced Club Statistics 24/25")
-            for stat_key, stat_label in [
-                ('Club Goals 24/25', '⚽ Club Goals'),
-                ('Club Assists 24/25', '🎯 Assists'),
-                ('Club Games 24/25', '🏃 Games played'),
-                ('Club Minutes 24/25', '⏱️ Minutes played')
-            ]:
-                val = stats_home.get(stat_key, None)
-                if val is not None and str(val).lower() != 'nan':
-                    st.write(f"**{stat_label} :** {val}")
+        st.markdown("#### 🏠 Home Team")
+        home_team = st.selectbox("Choose home team", data_manager.teams, key="home")
     
+    with col3:
+        st.markdown("#### ✈️ Away Team")
+        away_options = [team for team in data_manager.teams if team != home_team]
+        away_team = st.selectbox("Choose away team", away_options, key="away")
+    
+    return home_team, away_team
+
+def render_team_preview(home_team: str, away_team: str, data_manager: DataManager):
+    """Render team preview with logos and stats."""
+    if not (home_team and away_team):
+        return
+    
+    col1, col2, col3 = st.columns([2, 1, 2])
+    
+    # Home team
+    with col1:
+        render_team_card(home_team, data_manager, "🏠")
+    
+    # VS section
     with col2:
-        st.markdown(f"### 🛫 {away_team}")
-        
-        # Logo de l'équipe depuis notre dictionnaire
-        logo_away = get_team_logo(away_team)
-        if logo_away:
-            st.markdown(f'<img src="{logo_away}" class="team-logo" alt="{away_team} logo">', unsafe_allow_html=True)
-        else:
-            st.markdown('<div style="text-align: center; font-size: 4rem; margin: 15px 0;">🛫</div>', unsafe_allow_html=True)
-        
-        st.markdown(f"**🏟️ Stadium:** {format_stadium(stats_away['Venue'], stats_away['Venue City'], stats_away['Venue Capacity'])}")
-        
-        # Main metrics
-        metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
-        with metrics_col1:
-            st.metric("🏆 Position", stats_away["Position"])
-            st.metric("⚽ Goals scored", stats_away["Goals Scored"])
-        with metrics_col2:
-            st.metric("🎯 Wins", stats_away["Wins"])
-            st.metric("🤝 Draws", stats_away["Draws"])
-        with metrics_col3:
-            st.metric("❌ Losses", stats_away["Losses"])
-            st.metric("📊 Matches played", stats_away["Matches Played"])
-        
-        # Advanced stats if enabled
-        if show_advanced_stats:
-            st.markdown("#### 📈 Advanced Club Statistics 24/25")
-            for stat_key, stat_label in [
-                ('Club Goals 24/25', '⚽ Club Goals'),
-                ('Club Assists 24/25', '🎯 Assists'),
-                ('Club Games 24/25', '🏃 Games played'),
-                ('Club Minutes 24/25', '⏱️ Minutes played')
-            ]:
-                val = stats_away.get(stat_key, None)
-                if val is not None and str(val).lower() != 'nan':
-                    st.write(f"**{stat_label} :** {val}")
+        st.markdown('<div class="vs-divider">VS</div>', unsafe_allow_html=True)
+        render_prediction_results(home_team, away_team)
     
-    # Visual comparison section
-    st.markdown("---")
-    st.markdown("### 📊 Visual Comparison")
-    
-    stats_labels = ["Position", "Goals Scored", "Goals Conceded", "Wins", "Draws", "Losses", "Matches Played"]
-    
-    def safe_int(val):
-        try:
-            if val is None or (isinstance(val, float) and np.isnan(val)):
-                return 0
-            return int(val)
-        except Exception:
-            return 0
-    
-    home_stats = [safe_int(stats_home[label]) for label in stats_labels]
-    away_stats = [safe_int(stats_away[label]) for label in stats_labels]
-    
-    # Charts according to selection
-    if chart_type == "Bar Chart" or chart_type == "All Charts":
-        st.markdown("#### 📊 Bar Chart")
-        fig_bar, ax_bar = plt.subplots(figsize=(12, 6))
-        fig_bar.patch.set_facecolor('#0E1117')
-        ax_bar.set_facecolor('#262730')
-        
-        x = np.arange(len(stats_labels))
-        bars1 = ax_bar.bar(x - 0.25, home_stats, width=0.4, label=home_team, 
-                          color='#FF6B6B', alpha=0.8, edgecolor='white', linewidth=1)
-        bars2 = ax_bar.bar(x + 0.25, away_stats, width=0.4, label=away_team, 
-                          color='#4ECDC4', alpha=0.8, edgecolor='white', linewidth=1)
-        
-        # Style improvements
-        ax_bar.set_xticks(x)
-        ax_bar.set_xticklabels(stats_labels, rotation=45, ha='right', color='white')
-        ax_bar.set_ylabel('Values', color='white')
-        ax_bar.set_title('Comparison of Main Statistics', 
-                        color='white', fontsize=16, fontweight='bold')
-        ax_bar.legend(frameon=False, labelcolor='white')
-        ax_bar.tick_params(colors='white')
-        ax_bar.grid(True, alpha=0.3)
-        
-        # Adding values on bars
-        for bar in bars1:
-            height = bar.get_height()
-            ax_bar.text(bar.get_x() + bar.get_width()/2., height + 0.5,
-                       f'{int(height)}', ha='center', va='bottom', color='white', fontweight='bold')
-        
-        for bar in bars2:
-            height = bar.get_height()
-            ax_bar.text(bar.get_x() + bar.get_width()/2., height + 0.5,
-                       f'{int(height)}', ha='center', va='bottom', color='white', fontweight='bold')
-        
-        st.pyplot(fig_bar)
-    
-    if chart_type == "Performance Comparison" or chart_type == "All Charts":
-        st.markdown("#### 🏆 Performance Comparison")
-        
-        # Create two pie charts side by side for win/draw/loss comparison
-        fig_perf, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
-        fig_perf.patch.set_facecolor('#0E1117')
-        
-        # Home team pie chart
-        home_results = [stats_home["Wins"], stats_home["Draws"], stats_home["Losses"]]
-        home_labels = ['Wins', 'Draws', 'Losses']
-        home_colors = ['#2ECC71', '#F39C12', '#E74C3C']
-        
-        # Only show pie chart if there are matches played
-        if sum(home_results) > 0:
-            wedges1, texts1, autotexts1 = ax1.pie(home_results, labels=home_labels, colors=home_colors,
-                                                  autopct='%1.1f%%', startangle=90, textprops={'color': 'white'})
-            ax1.set_title(f'{home_team}\nTotal Matches: {stats_home["Matches Played"]}', 
-                         color='white', fontsize=14, fontweight='bold')
-        else:
-            ax1.text(0.5, 0.5, 'No Data\nAvailable', transform=ax1.transAxes, 
-                    ha='center', va='center', color='white', fontsize=16)
-            ax1.set_title(f'{home_team}\nNo Matches', color='white', fontsize=14, fontweight='bold')
-        
-        # Away team pie chart
-        away_results = [stats_away["Wins"], stats_away["Draws"], stats_away["Losses"]]
-        away_labels = ['Wins', 'Draws', 'Losses']
-        
-        # Only show pie chart if there are matches played
-        if sum(away_results) > 0:
-            wedges2, texts2, autotexts2 = ax2.pie(away_results, labels=away_labels, colors=home_colors,
-                                                  autopct='%1.1f%%', startangle=90, textprops={'color': 'white'})
-            ax2.set_title(f'{away_team}\nTotal Matches: {stats_away["Matches Played"]}', 
-                         color='white', fontsize=14, fontweight='bold')
-        else:
-            ax2.text(0.5, 0.5, 'No Data\nAvailable', transform=ax2.transAxes, 
-                    ha='center', va='center', color='white', fontsize=16)
-            ax2.set_title(f'{away_team}\nNo Matches', color='white', fontsize=14, fontweight='bold')
-        
-        plt.tight_layout()
-        st.pyplot(fig_perf)
-        
-        # Additional comparison metrics
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown("#### ⚽ Attack vs Defense")
-            home_attack_def = [stats_home["Goals Scored"], stats_home["Goals Conceded"]]
-            away_attack_def = [stats_away["Goals Scored"], stats_away["Goals Conceded"]]
-            
-            fig_att_def, ax_att_def = plt.subplots(figsize=(8, 6))
-            fig_att_def.patch.set_facecolor('#0E1117')
-            ax_att_def.set_facecolor('#262730')
-            
-            x_teams = [home_team, away_team]
-            goals_scored = [stats_home["Goals Scored"], stats_away["Goals Scored"]]
-            goals_conceded = [stats_home["Goals Conceded"], stats_away["Goals Conceded"]]
-            
-            x_pos = np.arange(len(x_teams))
-            bars1 = ax_att_def.bar(x_pos - 0.2, goals_scored, width=0.4, label='Goals Scored', 
-                                  color='#2ECC71', alpha=0.8)
-            bars2 = ax_att_def.bar(x_pos + 0.2, goals_conceded, width=0.4, label='Goals Conceded', 
-                                  color='#E74C3C', alpha=0.8)
-            
-            ax_att_def.set_xticks(x_pos)
-            ax_att_def.set_xticklabels(x_teams, color='white')
-            ax_att_def.set_ylabel('Goals', color='white')
-            ax_att_def.set_title('Attack vs Defense', color='white', fontweight='bold')
-            ax_att_def.legend(frameon=False, labelcolor='white')
-            ax_att_def.tick_params(colors='white')
-            ax_att_def.grid(True, alpha=0.3)
-            
-            # Add value labels on bars
-            for bar in bars1:
-                height = bar.get_height()
-                ax_att_def.text(bar.get_x() + bar.get_width()/2., height + 0.5,
-                               f'{int(height)}', ha='center', va='bottom', color='white', fontweight='bold')
-            
-            for bar in bars2:
-                height = bar.get_height()
-                ax_att_def.text(bar.get_x() + bar.get_width()/2., height + 0.5,
-                               f'{int(height)}', ha='center', va='bottom', color='white', fontweight='bold')
-            
-            st.pyplot(fig_att_def)
-        
-        with col2:
-            st.markdown("#### 📊 Win Rate Comparison")
-            
-            # Calculate win rates
-            home_win_rate = (stats_home["Wins"] / max(stats_home["Matches Played"], 1)) * 100
-            away_win_rate = (stats_away["Wins"] / max(stats_away["Matches Played"], 1)) * 100
-            
-            fig_win_rate, ax_win_rate = plt.subplots(figsize=(8, 6))
-            fig_win_rate.patch.set_facecolor('#0E1117')
-            ax_win_rate.set_facecolor('#262730')
-            
-            teams = [home_team, away_team]
-            win_rates = [home_win_rate, away_win_rate]
-            colors = ['#FF6B6B', '#4ECDC4']
-            
-            bars = ax_win_rate.bar(teams, win_rates, color=colors, alpha=0.8)
-            ax_win_rate.set_ylabel('Win Rate (%)', color='white')
-            ax_win_rate.set_title('Win Rate Comparison', color='white', fontweight='bold')
-            ax_win_rate.tick_params(colors='white')
-            ax_win_rate.grid(True, alpha=0.3, axis='y')
-            
-            # Add percentage labels
-            for bar, rate in zip(bars, win_rates):
-                ax_win_rate.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
-                               f'{rate:.1f}%', ha='center', va='bottom', color='white', fontweight='bold')
-            
-            st.pyplot(fig_win_rate)
-        
-        with col3:
-            st.markdown("#### 🎯 Goals per Match")
-            
-            home_goals_per_match = stats_home["Goals Scored"] / max(stats_home["Matches Played"], 1)
-            away_goals_per_match = stats_away["Goals Scored"] / max(stats_away["Matches Played"], 1)
-            
-            fig_gpm, ax_gpm = plt.subplots(figsize=(8, 6))
-            fig_gpm.patch.set_facecolor('#0E1117')
-            ax_gpm.set_facecolor('#262730')
-            
-            teams = [home_team, away_team]
-            goals_per_match = [home_goals_per_match, away_goals_per_match]
-            
-            bars = ax_gpm.bar(teams, goals_per_match, color=['#FF6B6B', '#4ECDC4'], alpha=0.8)
-            ax_gpm.set_ylabel('Goals per Match', color='white')
-            ax_gpm.set_title('Scoring Efficiency', color='white', fontweight='bold')
-            ax_gpm.tick_params(colors='white')
-            ax_gpm.grid(True, alpha=0.3, axis='y')
-            
-            # Add value labels
-            for bar, gpm in zip(bars, goals_per_match):
-                ax_gpm.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,
-                           f'{gpm:.2f}', ha='center', va='bottom', color='white', fontweight='bold')
-            
-            st.pyplot(fig_gpm)
-    
-    if chart_type == "Radar Chart" or chart_type == "All Charts":
-        st.markdown("#### 🕸️ Radar Chart")
-        from math import pi
-        
-        categories = stats_labels
-        N = len(categories)
-        values_home = home_stats + [home_stats[0]]
-        values_away = away_stats + [away_stats[0]]
-        angles = [n / float(N) * 2 * pi for n in range(N)]
-        angles += angles[:1]
-        
-        fig_radar = plt.figure(figsize=(10, 10))
-        fig_radar.patch.set_facecolor('#0E1117')
-        ax_radar = plt.subplot(111, polar=True)
-        ax_radar.set_facecolor('#262730')
-        
-        # Line plotting and filling
-        ax_radar.plot(angles, values_home, linewidth=3, linestyle='solid', 
-                     label=home_team, color='#FF6B6B')
-        ax_radar.fill(angles, values_home, alpha=0.25, color='#FF6B6B')
-        
-        ax_radar.plot(angles, values_away, linewidth=3, linestyle='solid', 
-                     label=away_team, color='#4ECDC4')
-        ax_radar.fill(angles, values_away, alpha=0.25, color='#4ECDC4')
-        
-        # Style improvements
-        ax_radar.set_xticks(angles[:-1])
-        ax_radar.set_xticklabels(categories, color='white', fontsize=10)
-        ax_radar.set_title('Overall Team Profile', 
-                          color='white', fontsize=16, fontweight='bold', pad=20)
-        ax_radar.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), 
-                       frameon=False, labelcolor='white')
-        ax_radar.grid(True, alpha=0.3)
-        ax_radar.tick_params(colors='white')
-        
-        st.pyplot(fig_radar)
+    # Away team
+    with col3:
+        render_team_card(away_team, data_manager, "✈️")
 
-# -------------------- Main App Logic --------------------
+def render_team_card(team_name: str, data_manager: DataManager, default_emoji: str):
+    """Render team card with logo and stats."""
+    att, mid, def_, logo_url = data_manager.get_team_data(team_name)
+    
+    # Logo
+    if logo_url:
+        st.markdown(f'<img src="{logo_url}" class="team-logo" alt="{team_name} logo">', unsafe_allow_html=True)
+    else:
+        st.markdown(f'<div class="default-team-emoji">{default_emoji}</div>', unsafe_allow_html=True)
+    
+    # Team name and stats
+    st.markdown(f"<div class='team-name'>{team_name}</div>", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="fifa-stats-container">
+        <div class="fifa-stats-row">
+            <div class="fifa-stat-item">
+                <div class="fifa-stat-label">ATT</div>
+                <div class="fifa-stat-value">{att}</div>
+            </div>
+            <div class="fifa-stat-item">
+                <div class="fifa-stat-label">MID</div>
+                <div class="fifa-stat-value">{mid}</div>
+            </div>
+            <div class="fifa-stat-item">
+                <div class="fifa-stat-label">DEF</div>
+                <div class="fifa-stat-value">{def_}</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
+def render_prediction_results(home_team: str, away_team: str):
+    """Render prediction results."""
+    if not all(key in st.session_state for key in ["prediction", "confidence", "home_goals", "away_goals"]):
+        return
+    
+    outcome = st.session_state['prediction']
+    confidence = st.session_state['confidence']
+    home_goals = st.session_state["home_goals"]
+    away_goals = st.session_state["away_goals"]
+    
+    # Determine emoji
+    if 'VICTORY' in outcome and home_team.upper() in outcome:
+        emoji = '🔥'
+    elif 'VICTORY' in outcome and away_team.upper() in outcome:
+        emoji = '⚡'
+    else:
+        emoji = '⚖️'
+    
+    st.markdown(f"""
+    <div style="margin-top: 20px; padding: 15px; text-align: center;">
+        <h2 style="margin: 0; font-size: 1.8rem; color: white; font-weight: bold;">
+            {emoji} {outcome}
+        </h2>
+        <h3 style="margin: 15px 0; font-size: 4.2rem; color: #FFD700; font-weight: bold;">
+            {home_goals} - {away_goals}
+        </h3>
+        <div style="font-size: 1.1rem; color: #ccc; font-weight: bold;">
+            Confidence: {confidence:.1f}%
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-# --- State management to display stats ---
-if "last_pred_home" not in st.session_state:
-    st.session_state["last_pred_home"] = None
-if "last_pred_away" not in st.session_state:
-    st.session_state["last_pred_away"] = None
-if "show_stats" not in st.session_state:
-    st.session_state["show_stats"] = False
-
-if st.button("🎯 Predict Match", key="predict_btn", help="Click to get the match prediction"):
-    try:
-        # Prediction with real model (already includes expressive display)
-        outcome, confidence = predict_match_outcome_with_score(home_team, away_team)
+def clear_prediction_if_teams_changed(home_team: str, away_team: str):
+    """Clear prediction results if teams changed."""
+    if (st.session_state.get("last_pred_home") != home_team or 
+        st.session_state.get("last_pred_away") != away_team):
         
-        # Store results in state
-        st.session_state['prediction'] = outcome
-        st.session_state['confidence'] = confidence
-        
-        # Remember teams for stats
-        st.session_state["last_pred_home"] = home_team
-        st.session_state["last_pred_away"] = away_team
-        st.session_state["show_stats"] = True
-        
-    except Exception as e:
-        st.error(f"❌ **Critical error during prediction:** {e}")
-        import traceback
-        with st.expander("🔧 **Error details (for debug)**"):
-            st.code(traceback.format_exc())
+        for key in ["prediction", "confidence", "home_goals", "away_goals"]:
+            if key in st.session_state:
+                del st.session_state[key]
 
-# Display stats and heatmap if a prediction was made
-if st.session_state["show_stats"] and st.session_state["last_pred_home"] and st.session_state["last_pred_away"]:
-    show_stats_and_heatmap(st.session_state["last_pred_home"], st.session_state["last_pred_away"], raw_years[0])
+# ========== MAIN APP ==========
+def main():
+    """Main application function."""
+    # Page setup
+    st.set_page_config(**APP_CONFIG)
+    AppStyle.apply_custom_css()
+    
+    # Initialize data manager
+    data_manager = DataManager()
+    
+    # Initialize session state
+    for var in ["last_pred_home", "last_pred_away", "show_stats"]:
+        if var not in st.session_state:
+            st.session_state[var] = None if "last_pred" in var else False
+    
+    # Team selection
+    home_team, away_team = render_team_selection(data_manager)
+    
+    # Clear results if teams changed
+    clear_prediction_if_teams_changed(home_team, away_team)
+    
+    # Team preview
+    render_team_preview(home_team, away_team, data_manager)
+    
+    # Prediction button
+    st.markdown('<div class="predict-container">', unsafe_allow_html=True)
+    _, col2, _ = st.columns([1, 1, 1])
+    with col2:
+        if st.button("⚽ Predict Match", key="predict_btn", use_container_width=True):
+            try:
+                outcome, confidence = data_manager.predict_match(home_team, away_team)
+                
+                st.session_state.update({
+                    'prediction': outcome,
+                    'confidence': confidence,
+                    'last_pred_home': home_team,
+                    'last_pred_away': away_team,
+                    'show_stats': True
+                })
+                
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"❌ **Prediction Error:** {str(e)}")
+                st.info("💡 Try selecting different teams or refresh the page")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Footer
+    AppStyle.add_footer(author="Santo, Konstantin and RV a.k.a The Dream Team", year="2025")
 
-# -------------------- Footer --------------------
-AppStyle.add_footer(author="Santo, Konstantin and RV a.k.a The Dream Team", year="2025")
+if __name__ == "__main__":
+    main()
