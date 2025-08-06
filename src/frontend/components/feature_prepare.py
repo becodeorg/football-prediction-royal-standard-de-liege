@@ -14,7 +14,7 @@ class FeaturePrepare:
     the home and away teams.
     """
     def __init__(self):
-        self.df = load_csv(filedir="prepared", filename="B1_old.csv")
+        self.df = load_csv(filedir="prepared", filename="Belgium_league_2526.csv")
         self.feature_cols = self._get_feature_cols()
 
     def _get_feature_cols(self) -> list[str]:

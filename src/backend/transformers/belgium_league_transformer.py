@@ -9,6 +9,3 @@ class BelgiumLeagueTransformer(LocalTransformer):
     Uses base LocalTransformer logic for Belgium league.
     """
     ...
-
-
-

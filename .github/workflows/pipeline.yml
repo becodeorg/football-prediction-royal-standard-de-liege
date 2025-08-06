@@ -1,0 +1,71 @@
+name: Train and Upload Model
+
+on:
+  # Trigger: either manually or on schedule
+  workflow_dispatch:  # Manual start via GitHub UI
+  schedule:
+    - cron: '0 2 * * 2'  # Every Tuesday at 02:00 UTC
+
+jobs:
+  train-and-upload:
+    runs-on: ubuntu-latest
+
+    # Environment variables used by the pipeline
+    env:
+      DROPBOX_ACCESS_TOKEN: ${{ secrets.DROPBOX_ACCESS_TOKEN }}   # Used for model upload
+      DROPBOX_MODEL_PATH: /models/latest_model.joblib             # Dropbox path to save model
+      DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }} # For automatic token refresh
+      DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
+      DROPBOX_APP_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
+      DROPBOX_TOKEN_URL: ${{ secrets.DROPBOX_TOKEN_URL }}         # Dropbox token API endpoint
+      CSV_SAVE_LOAD_PATH: ./data/                                 # Path for CSV input/output
+      MODEL_SAVE_LOAD_PATH: ./src/backend/model/trained_model/    # Local path to save model
+      BELGIUM_DATA_BASE_URL: https://www.football-data.co.uk/     # Source of raw football data
+
+    steps:
+      - name: Checkout repository
+        # Clone the repository code to the runner
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        # Set up the Python environment (v3.11)
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip dependencies
+        # Cache dependencies between runs to speed up CI
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        # Install required Python packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create data directories
+        # Ensure required directories exist for data and model saving
+        run: |
+          mkdir -p data/raw
+          mkdir -p data/prepared
+          mkdir -p src/backend/model/trained_model
+
+      - name: Run data pipeline and model training
+        # Run your main training pipeline (data download, transform, train, upload)
+        run: python main.py
+        env:
+          PYTHONPATH: .  # Add root to PYTHONPATH so local imports work
+
+      - name: Upload artifacts (optional)
+        # Upload trained model files as GitHub artifacts for manual access
+        uses: actions/upload-artifact@v3
+        if: success()
+        with:
+          name: trained-model
+          path: src/backend/model/trained_model/
+          retention-days: 30  # Keep the artifact for 30 days

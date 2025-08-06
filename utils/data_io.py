@@ -9,7 +9,12 @@ from config import settings
 logger = logging.getLogger(__name__)
 
 
-def load_csv(filedir: str, filename: str, sep: str = ",", encoding: str = "utf-8") -> pd.DataFrame:
+def load_csv(
+        filedir: str,
+        filename: str,
+        sep: str = ",",
+        encoding: str = "utf-8"
+) -> pd.DataFrame:
     """
     Load a CSV file from the default directory defined in the .env file (CSV_SAVE_LOAD_PATH).
 

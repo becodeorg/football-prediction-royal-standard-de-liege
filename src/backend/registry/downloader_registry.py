@@ -1,8 +1,9 @@
 import logging
 from typing import Type
+
 from src.backend.downloaders.local_downloader import LocalDownloader
 from src.backend.downloaders.belgium_league_downloader import BelgiumLeagueDownloader
-from src.backend.downloaders.base_downloder import BaseDownloader
+from src.backend.downloaders.base_downloader import BaseDownloader
 
 logger = logging.getLogger(__name__)
 

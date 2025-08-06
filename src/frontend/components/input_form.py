@@ -70,6 +70,3 @@ class MatchesData:
         if home == "" or away == "":
             return None, None
         return home, away
-
-
-

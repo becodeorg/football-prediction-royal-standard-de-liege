@@ -2,8 +2,10 @@ import logging
 from typing import Optional
 from collections import defaultdict
 from dataclasses import dataclass, field
+
 import pandas as pd
-from .base_transformer import BaseTransformer
+
+from src.backend.transformers.base_transformer import BaseTransformer
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +186,9 @@ class LocalTransformer(BaseTransformer):
         })
 
         logger.info("Transformed DataFrame successfully built.")
+
+        assert len(h2h_form) == len(df), "Mismatch in length of h2h_form"
+        assert len(h2h_diff) == len(df), "Mismatch in length of h2h_diff"
 
         return df_transformed
 

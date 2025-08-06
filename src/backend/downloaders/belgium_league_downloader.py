@@ -3,11 +3,12 @@ from urllib.parse import urljoin
 import requests
 from datetime import datetime as dt
 import time
+
 from bs4 import BeautifulSoup
 import pandas as pd
-from src.backend.downloaders.base_downloder import BaseDownloader
+
+from src.backend.downloaders.base_downloader import BaseDownloader
 from config import settings
-from utils.data_io import save_csv
 
 logger = logging.getLogger(__name__)
 
@@ -120,8 +121,3 @@ class BelgiumLeagueDownloader(BaseDownloader):
         raise FileNotFoundError(f"CSV for season {season_code} and league {self._league_code} not found.")
 
 
-if __name__ == '__main__':
-    downloader = BelgiumLeagueDownloader()
-    df = downloader.fetch()
-
-    save_csv(df, filename="test.csv")

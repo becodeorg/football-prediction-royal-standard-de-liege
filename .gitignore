@@ -18,6 +18,7 @@ __pycache__/
 
 # Jupyter notebook checkpoints (if you use Jupyter)
 .ipynb_checkpoints/
+*.ipynb
 
 # System files
 .DS_Store
@@ -26,5 +27,6 @@ Thumbs.db
 # Tests
 tests/
 
-# Credentials files
-credentials/
+# other
+pytest.ini
+utils/retry_conn_decorator.py

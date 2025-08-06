@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 
@@ -43,6 +43,8 @@ my_config = CleaningConfig(
         'home_goals_avg',
         'away_goals_avg',
         'home_conceded_avg',
-        'away_conceded_avg'
+        'away_conceded_avg',
+        'head2head_goal_diff_last3',
+        'head2head_form_last3'
     ]
 )
