@@ -130,8 +130,8 @@ class DataManager:
                     outcome = self._interpret_prediction(prediction, home_team, away_team)
                     self._generate_score(home_team, away_team, prediction)
                     return outcome, confidence
-            
-            # Fallback prediction
+
+            # Fallback prediction   Because we don't have enough data matches for some teams
             return self._fallback_prediction(home_team, away_team)
             
         except:
