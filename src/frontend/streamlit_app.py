@@ -459,8 +459,63 @@ def render_team_card(team_name: str, data_manager: DataManager, default_emoji: s
     else:
         st.markdown(f'<div class="default-team-emoji">{default_emoji}</div>', unsafe_allow_html=True)
     
-    # Team name and stats
+    # Team name
     st.markdown(f"<div class='team-name'>{team_name}</div>", unsafe_allow_html=True)
+    
+    # Last 5 matches
+    try:
+        historical_data = load_csv(filedir="prepared", filename="B1_old.csv")
+        team_matches = historical_data[
+            (historical_data['HomeTeam'] == team_name) | 
+            (historical_data['AwayTeam'] == team_name)
+        ].tail(5).sort_values('Date', ascending=False)
+        
+        if not team_matches.empty:
+            st.markdown("<div class='recent-matches-title'>Last 5 matches:</div>", unsafe_allow_html=True)
+            
+            # Build HTML string with all circles in one row
+            circles_list = []
+            
+            for idx, (_, match) in enumerate(team_matches.iterrows()):
+                if idx < 5:  # Ensure we don't exceed 5 matches
+                    home_team_match = match['HomeTeam']
+                    away_team_match = match['AwayTeam']
+                    result = match['FTR']
+                    
+                    # Determine result for this team
+                    if team_name == home_team_match:
+                        if result == 1:  # Home win
+                            result_text = "W"
+                            result_color = "#4CAF50"
+                        elif result == -1:  # Home loss
+                            result_text = "L"
+                            result_color = "#f44336"
+                        else:  # Draw
+                            result_text = "D"
+                            result_color = "#FF9800"
+                    else:  # Away team
+                        if result == -1:  # Away win
+                            result_text = "W"
+                            result_color = "#4CAF50"
+                        elif result == 1:  # Away loss
+                            result_text = "L"
+                            result_color = "#f44336"
+                        else:  # Draw
+                            result_text = "D"
+                            result_color = "#FF9800"
+                    
+                    circle_html = f'<div style="width: 24px; height: 24px; border-radius: 50%; background-color: {result_color}; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.7rem; flex-shrink: 0;">{result_text}</div>'
+                    circles_list.append(circle_html)
+            
+            # Combine all circles
+            all_circles = ''.join(circles_list)
+            final_html = f'<div style="display: flex; justify-content: center; gap: 10px; margin-bottom: 15px; align-items: center;">{all_circles}</div>'
+            
+            st.markdown(final_html, unsafe_allow_html=True)
+    except Exception as e:
+        st.markdown("<div style='text-align: center; font-size: 0.8rem; color: #ff6b6b; margin: 10px 0; font-style: italic;'>No recent matches available</div>", unsafe_allow_html=True)
+    
+    # Team stats
     st.markdown(f"""
     <div class="fifa-stats-container">
         <div class="fifa-stats-row">

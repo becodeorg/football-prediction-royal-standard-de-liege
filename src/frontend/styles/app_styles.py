@@ -262,6 +262,83 @@ class AppStyle:
                 text-align: center;
                 font-weight: bold;
                 font-size: 1.2rem;
+                margin-bottom: 10px;
+            }
+            
+            /* Recent matches styling */
+            .recent-matches-title {
+                text-align: center;
+                font-size: 0.9rem;
+                color: #ccc;
+                margin: 10px 0 8px 0;
+                font-weight: bold;
+            }
+            
+            .recent-matches-container {
+                display: flex;
+                justify-content: center;
+                gap: 1px;
+                margin-bottom: 15px;
+            }
+            
+            .recent-match-item {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                background: rgba(255, 255, 255, 0.05);
+                border-radius: 6px;
+                padding: 4px 3px;
+                min-width: 40px;
+                font-size: 0.7rem;
+            }
+            
+            .match-result {
+                width: 18px;
+                height: 18px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: bold;
+                font-size: 0.65rem;
+                margin-bottom: 2px;
+            }
+            
+            .match-result.win {
+                background-color: #4CAF50;
+                color: white;
+            }
+            
+            .match-result.loss {
+                background-color: #f44336;
+                color: white;
+            }
+            
+            .match-result.draw {
+                background-color: #FF9800;
+                color: white;
+            }
+            
+            .match-opponent {
+                font-size: 0.6rem;
+                color: #ccc;
+                text-align: center;
+                margin-bottom: 2px;
+                line-height: 1;
+            }
+            
+            .match-score {
+                font-size: 0.6rem;
+                color: #fff;
+                font-weight: bold;
+            }
+            
+            .recent-matches-error {
+                text-align: center;
+                font-size: 0.8rem;
+                color: #ff6b6b;
+                margin: 10px 0;
+                font-style: italic;
             }
             
             /* Prediction result styling */
