@@ -102,6 +102,15 @@ class AppStyle:
         """
         st.markdown("""
         <style>
+            /* Import Professional Fonts */
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Poppins:wght@300;400;500;600;700;800&display=swap');
+            
+            /* Professional Background */
+            .stApp {
+                background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 25%, #16213e 50%, #0f0f23 100%);
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            }
+            
             /* Global Styles */
             .main-header {
                 background: linear-gradient(90deg, #FF6B6B, #4ECDC4);
@@ -374,6 +383,54 @@ class AppStyle:
                 text-align: center;
                 font-size: 4rem;
                 margin: 15px 0;
+            }
+            
+            /* Sidebar Styling */
+            .stSidebar {
+                background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+            }
+            
+            .stSidebar > div {
+                background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+            }
+            
+            /* Sidebar selectbox styling */
+            .stSidebar .stSelectbox > div > div {
+                background: rgba(255, 255, 255, 0.08) !important;
+                border: 1px solid rgba(255, 255, 255, 0.2) !important;
+                border-radius: 10px !important;
+                color: #ffffff !important;
+            }
+            
+            .stSidebar .stSelectbox > div > div:hover {
+                border-color: rgba(102, 126, 234, 0.5) !important;
+            }
+            
+            /* Sidebar checkbox styling */
+            .stSidebar .stCheckbox > label {
+                color: rgba(255, 255, 255, 0.9) !important;
+                font-family: 'Inter', sans-serif !important;
+            }
+            
+            /* Sidebar metric styling */
+            .stSidebar .stMetric {
+                background: rgba(255, 255, 255, 0.05) !important;
+                padding: 15px !important;
+                border-radius: 10px !important;
+                border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            }
+            
+            .stSidebar .stMetric > div {
+                color: #ffffff !important;
+            }
+            
+            /* Sidebar markdown styling */
+            .stSidebar .stMarkdown h3 {
+                color: #667eea !important;
+                font-family: 'Poppins', sans-serif !important;
+                font-weight: 600 !important;
+                margin-top: 25px !important;
+                margin-bottom: 15px !important;
             }
         </style>
         """, unsafe_allow_html=True)

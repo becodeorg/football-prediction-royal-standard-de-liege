@@ -9,6 +9,8 @@ import pandas as pd
 import joblib
 import os
 from typing import Tuple, Optional
+import plotly.graph_objects as go
+import plotly.express as px
 
 # ========== CONFIGURATION ==========
 current_dir = os.path.dirname(__file__)
@@ -37,15 +39,80 @@ class Constants:
 class DataManager:
     """Unified data management for teams and predictions."""
     
-    def __init__(self):
+    def __init__(self, selected_season="All Seasons"):
+        """
+        Initialize DataManager with season-specific data loading.
+        
+        Args:
+            selected_season (str): Season to filter data by. Default "All Seasons"
+                for no filtering. Format: "YYYY-YYYY" (e.g., "2019-2020")
+                
+        Attributes:
+            selected_season (str): Currently selected season
+            team_stats (pd.DataFrame): Team statistics data
+            teams (list): Sorted list of available team names
+            match_data (pd.DataFrame): Historical match data
+            model: Trained ML model for predictions
+        """
+        self.selected_season = selected_season
         self.team_stats = self._load_team_stats()
         self.teams = sorted(self.team_stats['Team'].tolist()) if self.team_stats is not None else []
         self.match_data = self._load_match_data()
         self.model = self._load_model()
+        
+    def get_available_seasons(self):
+        """Get list of available seasons from the data."""
+        if self.match_data.empty:
+            return ["All Seasons"]
+        
+        # Calculate seasons from dates
+        self.match_data['Date'] = pd.to_datetime(self.match_data['Date'], format='%Y-%m-%d')
+        
+        def get_season(date):
+            if date.month >= 7:  # Juillet à décembre
+                return f'{date.year}-{date.year+1}'
+            else:  # Janvier à juin
+                return f'{date.year-1}-{date.year}'
+        
+        self.match_data['Season'] = self.match_data['Date'].apply(get_season)
+        seasons = sorted(self.match_data['Season'].unique())
+        return ["All Seasons"] + seasons
     
-    @st.cache_data
-    def _load_team_stats(_self):
-        """Load team statistics."""
+    def filter_data_by_season(self, df):
+        """Filter dataframe by selected season."""
+        if self.selected_season == "All Seasons" or df.empty:
+            return df
+        
+        # Ensure Season column exists
+        if 'Season' not in df.columns:
+            df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')
+            def get_season(date):
+                if date.month >= 7:
+                    return f'{date.year}-{date.year+1}'
+                else:
+                    return f'{date.year-1}-{date.year}'
+            df['Season'] = df['Date'].apply(get_season)
+        
+        return df[df['Season'] == self.selected_season]
+    
+    def _load_team_stats(self):
+        """
+        Load team statistics from CSV file.
+        
+        Returns:
+            pd.DataFrame or None: DataFrame containing team statistics with columns:
+                - Team: Team name
+                - Attack: Attack rating (0-100)
+                - Midfield: Midfield rating (0-100) 
+                - Defense: Defense rating (0-100)
+                - Logo_URL: URL to team logo image
+                Returns None if file not found or loading fails.
+                
+        Raises:
+            FileNotFoundError: When jupiler_teams_data.csv is not found
+            pd.errors.EmptyDataError: When CSV file is empty
+            Exception: For other data loading errors
+        """
         try:
             path = os.path.join(current_dir, 'components', 'jupiler_teams_data.csv')
             return pd.read_csv(path)
@@ -58,11 +125,30 @@ class DataManager:
         return None
     
     def _load_match_data(self):
-        """Load historical match data."""
+        """
+        Load historical match data from B1_old.csv file.
+        
+        Returns:
+            pd.DataFrame: DataFrame containing match data with columns:
+                - Date: Match date (YYYY-MM-DD format)
+                - HomeTeam: Home team name
+                - AwayTeam: Away team name  
+                - FTHG: Full Time Home Goals
+                - FTAG: Full Time Away Goals
+                - FTR: Full Time Result (1=Home win, 0=Draw, -1=Away win)
+                - Year: Extracted year from date
+                - Plus additional feature columns for ML model
+                Returns empty DataFrame if loading fails.
+                
+        Raises:
+            FileNotFoundError: When B1_old.csv is not found
+            pd.errors.EmptyDataError: When CSV file is empty
+            Exception: For other data loading errors
+        """
         try:
             path = os.path.abspath(os.path.join(current_dir, '../../data/prepared/B1_old.csv'))
             df = pd.read_csv(path)
-            df['Year'] = pd.to_datetime(df['Date'], format='%d/%m/%Y', errors='coerce').dt.year
+            df['Year'] = pd.to_datetime(df['Date'], format='%Y-%m-%d', errors='coerce').dt.year
             return df
         except FileNotFoundError:
             st.error("❌ Match data file not found")
@@ -71,10 +157,20 @@ class DataManager:
         except Exception as e:
             st.error(f"❌ Error loading match data: {e}")
         return pd.DataFrame()
-    
-    @st.cache_resource(show_spinner=False)
-    def _load_model(_self):
-        """Load ML model."""
+
+    def _load_model(self):
+        """
+        Load trained ML model from joblib file.
+        
+        Returns:
+            sklearn model or None: Trained model object with predict() and 
+                potentially predict_proba() methods. Returns None if model
+                not found or loading fails.
+                
+        Raises:
+            FileNotFoundError: When trained_model.joblib is not found
+            Exception: For other model loading errors
+        """
         try:
             path = os.path.join(current_dir, '..', 'backend', 'model', 'trained_model', 'trained_model.joblib')
             return joblib.load(path)
@@ -85,7 +181,23 @@ class DataManager:
         return None
     
     def get_team_data(self, team_name: str) -> Tuple[int, int, int, Optional[str]]:
-        """Get team stats and logo."""
+        """
+        Retrieve comprehensive team statistics and logo URL.
+        
+        Args:
+            team_name (str): Name of the team to get data for
+            
+        Returns:
+            Tuple[int, int, int, Optional[str]]: Four-element tuple containing:
+                - Attack rating (0-100): Team's offensive capability
+                - Midfield rating (0-100): Team's midfield strength  
+                - Defense rating (0-100): Team's defensive capability
+                - Logo URL (str or None): URL to team logo image, None if not available
+                
+        Note:
+            If team not found or no stats available, returns league averages.
+            League averages are calculated from all teams in the dataset.
+        """
         if self.team_stats is None:
             # Use league averages if no stats available
             league_avg = self._calculate_league_averages()
@@ -101,7 +213,17 @@ class DataManager:
         return league_avg, league_avg, league_avg, None
     
     def _calculate_league_averages(self) -> int:
-        """Calculate league average stats from actual data."""
+        """
+        Calculate average team statistics across the entire league.
+        
+        Returns:
+            int: Average rating across all teams and all categories (Attack, Midfield, Defense).
+                Returns 75 as fallback if no team statistics are available.
+                
+        Note:
+            Used as fallback when individual team stats are unavailable.
+            Averages are computed from Attack, Midfield, and Defense ratings.
+        """
         if self.team_stats is not None and not self.team_stats.empty:
             avg_attack = int(self.team_stats['Attack'].mean())
             avg_midfield = int(self.team_stats['Midfield'].mean()) 
@@ -110,7 +232,19 @@ class DataManager:
         return 75  # Only if absolutely no data
     
     def predict_match(self, home_team: str, away_team: str) -> Tuple[str, float]:
-        """Predict match outcome."""
+        """
+    Predict match outcome using ML model or statistical fallback.
+    
+    Args:
+        home_team: Name of the home team
+        away_team: Name of the away team
+        
+    Returns:
+        Tuple of (outcome_description, confidence_percentage)
+        
+    Raises:
+        ValueError: If teams are invalid
+    """
         try:
             # Try ML prediction
             if self.model is not None:
@@ -187,7 +321,35 @@ class DataManager:
         self._set_match_score(home_goals, away_goals)
     
     def _fallback_prediction(self, home_team: str, away_team: str) -> Tuple[str, float]:
-        """Advanced statistical fallback prediction with multiple fallback layers."""
+        """
+        Advanced statistical fallback prediction using multiple data layers.
+        
+        This method is used when the ML model is unavailable or fails to predict.
+        It employs a sophisticated multi-layer approach combining team performance,
+        FIFA-style ratings, head-to-head history, and form analysis.
+        
+        Args:
+            home_team (str): Name of the home team
+            away_team (str): Name of the away team
+            
+        Returns:
+            Tuple[str, float]: Two-element tuple containing:
+                - Outcome description (str): Human-readable prediction like "VICTORY TEAM_NAME" or "DRAW"
+                - Confidence percentage (float): Prediction confidence (50.0-95.0%)
+                
+        Algorithm Layers:
+            1. Team Performance Analysis: Historical goal scoring and conceding patterns
+            2. FIFA-style Stats: Attack, Midfield, Defense ratings comparison
+            3. Head-to-Head Factor: Historical matchup results between these teams
+            4. Strength Calculation: Weighted combination based on data quality
+            5. Home Advantage: Statistical advantage for playing at home
+            6. Score Generation: Realistic score using Poisson distribution
+            7. Confidence Estimation: Multi-factor confidence calculation
+            
+        Note:
+            Confidence is calculated based on team strength difference, data quality,
+            and team consistency. Higher confidence indicates more reliable prediction.
+        """
         
         # Layer 1: Direct team performance analysis
         home_team_performance = self._analyze_team_performance(home_team, home=True)
@@ -270,13 +432,44 @@ class DataManager:
         return confidence
     
     def _analyze_team_performance(self, team_name: str, home: bool) -> dict:
-        """Analyze team performance with multiple metrics."""
+        """
+        Comprehensive team performance analysis with multiple metrics.
+        
+        Analyzes team performance considering goals scored/conceded, recent form,
+        consistency, and data quality. All analysis is filtered by the selected season.
+        
+        Args:
+            team_name (str): Name of the team to analyze
+            home (bool): If True, analyze home performance; if False, analyze away performance
+            
+        Returns:
+            dict: Performance metrics dictionary with the following keys:
+                - avg_goals_scored (float): Average goals scored per match
+                - avg_goals_conceded (float): Average goals conceded per match  
+                - form (float): Recent form factor (0.0-1.0, where 1.0 is excellent)
+                - consistency (float): Team consistency (0.0-1.0, where 1.0 is very consistent)
+                - data_quality (float): Quality of available data (0.0-1.0, where 1.0 is excellent)
+                
+        Algorithm:
+            1. Filter matches by season and home/away status
+            2. Calculate goal scoring and conceding averages
+            3. Analyze recent form (last 5 matches)
+            4. Calculate consistency based on goal variance
+            5. Assess data quality based on number of matches and recency
+            
+        Note:
+            Returns default neutral values if no match data is available.
+            Data quality affects how much this analysis is trusted in predictions.
+        """
+        # Filter data by season first
+        filtered_data = self.filter_data_by_season(self.match_data)
+        
         if home:
-            team_matches = self.match_data[self.match_data['HomeTeam'] == team_name]
+            team_matches = filtered_data[filtered_data['HomeTeam'] == team_name]
             goals_for = team_matches['FTHG'].tolist() if len(team_matches) > 0 else []
             goals_against = team_matches['FTAG'].tolist() if len(team_matches) > 0 else []
         else:
-            team_matches = self.match_data[self.match_data['AwayTeam'] == team_name]
+            team_matches = filtered_data[filtered_data['AwayTeam'] == team_name]
             goals_for = team_matches['FTAG'].tolist() if len(team_matches) > 0 else []
             goals_against = team_matches['FTHG'].tolist() if len(team_matches) > 0 else []
         
@@ -313,10 +506,13 @@ class DataManager:
         }
     
     def _get_head_to_head_factor(self, home_team: str, away_team: str) -> float:
-        """Calculate head-to-head historical factor."""
-        h2h_matches = self.match_data[
-            ((self.match_data['HomeTeam'] == home_team) & (self.match_data['AwayTeam'] == away_team)) |
-            ((self.match_data['HomeTeam'] == away_team) & (self.match_data['AwayTeam'] == home_team))
+        """Calculate head-to-head historical factor, filtered by season."""
+        # Filter data by season first
+        filtered_data = self.filter_data_by_season(self.match_data)
+        
+        h2h_matches = filtered_data[
+            ((filtered_data['HomeTeam'] == home_team) & (filtered_data['AwayTeam'] == away_team)) |
+            ((filtered_data['HomeTeam'] == away_team) & (filtered_data['AwayTeam'] == home_team))
         ]
         
         if len(h2h_matches) == 0:
@@ -413,17 +609,405 @@ class DataManager:
         
         return min(95.0, max(50.0, final_confidence))  # Cap between 50-95%
 
+# ========== CHART FUNCTIONS ==========
+def create_goals_comparison_chart(home_team: str, away_team: str, data_manager: DataManager):
+    """
+    Create bar chart showing goals scored and goals conceded for each team.
+    
+    Args:
+        home_team (str): Name of home team
+        away_team (str): Name of away team  
+        data_manager (DataManager): Data manager instance
+    Returns:
+        plotly.graph_objects.Figure: Goals scored/conceded comparison chart
+    """
+    # Get total goals scored and conceded for each team
+    # Utilise les données filtrées par saison
+    match_data = data_manager.filter_data_by_season(data_manager.match_data)
+
+    def get_total_goals(team_name, home=True, scored=True):
+        if home:
+            team_matches = match_data[match_data['HomeTeam'] == team_name]
+            if scored:
+                return int(team_matches['FTHG'].sum())
+            else:
+                return int(team_matches['FTAG'].sum())
+        else:
+            team_matches = match_data[match_data['AwayTeam'] == team_name]
+            if scored:
+                return int(team_matches['FTAG'].sum())
+            else:
+                return int(team_matches['FTHG'].sum())
+
+    home_goals_scored = get_total_goals(home_team, home=True, scored=True)
+    home_goals_conceded = get_total_goals(home_team, home=True, scored=False)
+    away_goals_scored = get_total_goals(away_team, home=False, scored=True)
+    away_goals_conceded = get_total_goals(away_team, home=False, scored=False)
+
+    teams = [home_team, away_team]
+    scored = [home_goals_scored, away_goals_scored]
+    conceded = [home_goals_conceded, away_goals_conceded]
+
+    fig = go.Figure()
+
+    # Goals scored bars
+    fig.add_trace(go.Bar(
+        name='Wins',
+        x=teams,
+        y=scored,
+        marker_color='#4CAF50',  # Green for wins
+        text=[str(val) for val in scored],
+        textposition='auto',
+        textfont=dict(size=14, color='white'),
+        hovertemplate='<b>%{x}</b><br>Wins: %{y}<extra></extra>'
+    ))
+
+    fig.add_trace(go.Bar(
+        name='Losses',
+        x=teams,
+        y=conceded,
+        marker_color='#f44336',  # Red for losses
+        text=[str(val) for val in conceded],
+        textposition='auto',
+        textfont=dict(size=14, color='white'),
+        hovertemplate='<b>%{x}</b><br>Losses: %{y}<extra></extra>'
+    ))
+
+    fig.update_layout(
+        title={
+            'text': ' Total Goals Scored & Conceded',
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': {'size': 18, 'color': 'white', 'family': 'Arial, sans-serif'}
+        },
+        xaxis_title='Teams',
+        yaxis_title='Total Goals',
+        barmode='group',
+        template='plotly_dark',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='white', family='Arial, sans-serif'),
+        height=400,
+        margin=dict(l=50, r=50, t=80, b=50),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.5,
+            xanchor="center",
+            x=0.5
+        )
+    )
+
+    return fig
+
+def create_head_to_head_pie_chart(home_team: str, away_team: str, data_manager: DataManager):
+    """
+    Create a pie chart showing head-to-head results breakdown for selected teams and season.
+    Returns:
+        plotly.graph_objects.Figure: Pie chart of win/draw percentages
+    """
+    match_data = data_manager.filter_data_by_season(data_manager.match_data)
+    h2h_matches = match_data[
+        ((match_data['HomeTeam'] == home_team) & (match_data['AwayTeam'] == away_team)) |
+        ((match_data['HomeTeam'] == away_team) & (match_data['AwayTeam'] == home_team))
+    ]
+    total = len(h2h_matches)
+    if total == 0:
+        labels = ['No Data']
+        values = [1]
+        colors = ['#888']
+    else:
+        home_wins = len(h2h_matches[
+            ((h2h_matches['HomeTeam'] == home_team) & (h2h_matches['FTHG'] > h2h_matches['FTAG'])) |
+            ((h2h_matches['AwayTeam'] == home_team) & (h2h_matches['FTAG'] > h2h_matches['FTHG']))
+        ])
+        away_wins = len(h2h_matches[
+            ((h2h_matches['HomeTeam'] == away_team) & (h2h_matches['FTHG'] > h2h_matches['FTAG'])) |
+            ((h2h_matches['AwayTeam'] == away_team) & (h2h_matches['FTAG'] > h2h_matches['FTHG']))
+        ])
+        draws = len(h2h_matches[h2h_matches['FTHG'] == h2h_matches['FTAG']])
+        labels = [f'{home_team} Wins', 'Draws', f'{away_team} Wins']
+        values = [home_wins, draws, away_wins]
+        colors = ['#667eea', '#FF9800', '#f093fb']
+    fig = go.Figure(data=[go.Pie(
+        labels=labels,
+        values=values,
+        marker_colors=colors,
+        textinfo='label+percent',
+        textfont=dict(size=12, color='white'),
+        hovertemplate='<b>%{label}</b><br>Percentage: %{percent}<extra></extra>'
+    )])
+    fig.update_layout(
+        title={
+            'text': f' Head-to-Head Results ({home_team} vs {away_team})',
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': {'size': 18, 'color': 'white', 'family': 'Arial, sans-serif'}
+        },
+        template='plotly_dark',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='white', family='Arial, sans-serif'),
+        height=400,
+        margin=dict(l=50, r=50, t=80, b=50),
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.5,
+            xanchor="center",
+            x=0.5
+        )
+    )
+    return fig
+
+def create_placeholder_pie_chart():
+    """
+    Create placeholder pie chart for future implementation.
+    
+    Returns:
+        plotly.graph_objects.Figure: Placeholder pie chart
+    """
+    # Placeholder data
+    labels = ['Data A', 'Data B', 'Data C']
+    values = [40, 35, 25]
+    colors = ['#667eea', '#f093fb', '#4CAF50']
+    
+    fig = go.Figure(data=[go.Pie(
+        labels=labels,
+        values=values,
+        marker_colors=colors,
+        textinfo='label+percent',
+        textfont=dict(size=12, color='white'),
+        hovertemplate='<b>%{label}</b><br>Percentage: %{percent}<extra></extra>'
+    )])
+    
+    fig.update_layout(
+        title={
+            'text': '📊 Percentage Analysis',
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': {'size': 18, 'color': 'white', 'family': 'Arial, sans-serif'}
+        },
+        template='plotly_dark',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='white', family='Arial, sans-serif'),
+        height=400,
+        margin=dict(l=50, r=50, t=80, b=50),
+        showlegend=True,
+        legend=dict(
+            orientation="v",
+            yanchor="middle",
+            y=0.5,
+            xanchor="left",
+            x=1.05
+        )
+    )
+    
+    return fig
+
+def create_placeholder_bar_chart():
+    """
+    Create placeholder bar chart for future implementation.
+    
+    Returns:
+        plotly.graph_objects.Figure: Placeholder bar chart
+    """
+    # Placeholder data
+    categories = ['Category 1', 'Category 2', 'Category 3']
+    values = [65, 80, 45]
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        x=categories,
+        y=values,
+        marker_color='#4CAF50',
+        text=values,
+        textposition='auto',
+        textfont=dict(size=14, color='white'),
+        hovertemplate='<b>%{x}</b><br>Value: %{y}<extra></extra>',
+        showlegend=False
+    ))
+    
+    fig.update_layout(
+        title={
+            'text': '📈 Future Analysis',
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': {'size': 18, 'color': 'white', 'family': 'Arial, sans-serif'}
+        },
+        xaxis_title='Categories',
+        yaxis_title='Values',
+        template='plotly_dark',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='white', family='Arial, sans-serif'),
+        height=400,
+        margin=dict(l=50, r=50, t=80, b=50)
+    )
+    
+    return fig
+
+def create_home_away_performance_chart(home_team: str, away_team: str, data_manager: DataManager):
+    """
+    Bar chart comparing home and away performance (wins/losses) for each team in the selected season.
+    """
+    match_data = data_manager.filter_data_by_season(data_manager.match_data)
+    def get_results(team, home):
+        if home:
+            matches = match_data[match_data['HomeTeam'] == team]
+            wins = len(matches[matches['FTHG'] > matches['FTAG']])
+            losses = len(matches[matches['FTHG'] < matches['FTAG']])
+        else:
+            matches = match_data[match_data['AwayTeam'] == team]
+            wins = len(matches[matches['FTAG'] > matches['FTHG']])
+            losses = len(matches[matches['FTAG'] < matches['FTHG']])
+        return wins, losses
+    home_home_wins, home_home_losses = get_results(home_team, True)
+    home_away_wins, home_away_losses = get_results(home_team, False)
+    away_home_wins, away_home_losses = get_results(away_team, True)
+    away_away_wins, away_away_losses = get_results(away_team, False)
+    teams = [home_team, away_team]
+    home_wins = [home_home_wins, away_home_wins]
+    away_wins = [home_away_wins, away_away_wins]
+    home_losses = [home_home_losses, away_home_losses]
+    away_losses = [home_away_losses, away_away_losses]
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        name='Home Wins',
+        x=teams,
+        y=home_wins,
+        marker_color='#4CAF50',
+        text=home_wins,
+        textposition='auto',
+        textfont=dict(size=14, color='white'),
+        hovertemplate='<b>%{x}</b><br>Home Wins: %{y}<extra></extra>'
+    ))
+    fig.add_trace(go.Bar(
+        name='Away Wins',
+        x=teams,
+        y=away_wins,
+        marker_color='#2196F3',
+        text=away_wins,
+        textposition='auto',
+        textfont=dict(size=14, color='white'),
+        hovertemplate='<b>%{x}</b><br>Away Wins: %{y}<extra></extra>'
+    ))
+    fig.add_trace(go.Bar(
+        name='Home Losses',
+        x=teams,
+        y=home_losses,
+        marker_color='#f44336',
+        text=home_losses,
+        textposition='auto',
+        textfont=dict(size=14, color='white'),
+        hovertemplate='<b>%{x}</b><br>Home Losses: %{y}<extra></extra>'
+    ))
+    fig.add_trace(go.Bar(
+        name='Away Losses',
+        x=teams,
+        y=away_losses,
+        marker_color='#FF9800',
+        text=away_losses,
+        textposition='auto',
+        textfont=dict(size=14, color='white'),
+        hovertemplate='<b>%{x}</b><br>Away Losses: %{y}<extra></extra>'
+    ))
+    fig.update_layout(
+        title={
+            'text': 'paHome vs Away Performance',
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': {'size': 18, 'color': 'white', 'family': 'Arial, sans-serif'}
+        },
+        xaxis_title='Teams',
+        yaxis_title='Number of Matches',
+        barmode='group',
+        template='plotly_dark',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='white', family='Arial, sans-serif'),
+        height=420,
+        margin=dict(l=50, r=50, t=80, b=50),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.5,
+            xanchor="center",
+            x=0.5,
+            font=dict(size=12),
+            itemclick="toggleothers",
+            itemdoubleclick="toggle"
+        )
+    )
+    return fig
+
+def render_analytics_charts(home_team: str, away_team: str, data_manager: DataManager):
+    """
+    Render comprehensive analytics charts section.
+    
+    Args:
+        home_team (str): Name of home team
+        away_team (str): Name of away team
+        data_manager (DataManager): Data manager instance
+    """
+    if not (home_team and away_team):
+        return
+    
+    st.markdown("---")
+    st.markdown(
+        "<h2 style='text-align: center; color: #667eea; margin-bottom: 30px;'> Team Analytics Dashboard</h2>", 
+        unsafe_allow_html=True
+    )
+    
+    # Create three columns for charts
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        # Goals comparison chart
+        fig1 = create_goals_comparison_chart(home_team, away_team, data_manager)
+        st.plotly_chart(fig1, use_container_width=True)
+    
+    with col2:
+        # Head-to-head results pie chart
+        fig2 = create_head_to_head_pie_chart(home_team, away_team, data_manager)
+        st.plotly_chart(fig2, use_container_width=True)
+    
+    with col3:
+        # Home vs Away performance bar chart
+        fig3 = create_home_away_performance_chart(home_team, away_team, data_manager)
+        st.plotly_chart(fig3, use_container_width=True)
+
 # ========== UI FUNCTIONS ==========
 def render_team_selection(data_manager: DataManager) -> Tuple[str, str]:
-    """Render team selection interface."""
+    """
+    Render team selection interface with home/away dropdown menus.
+    
+    Creates a three-column layout with home team selector on the left,
+    empty space in the middle, and away team selector on the right.
+    Ensures the same team cannot be selected for both home and away.
+    
+    Args:
+        data_manager (DataManager): DataManager instance containing team list
+        
+    Returns:
+        Tuple[str, str]: Selected team names as (home_team, away_team)
+        
+    UI Components:
+        - Home team selectbox with all available teams
+        - Away team selectbox with all teams except the selected home team
+        - Responsive column layout [2, 1, 2] proportions
+    """
     col1, col2, col3 = st.columns([2, 1, 2])
     
     with col1:
-        st.markdown("#### 🏠 Home Team")
+        st.markdown("#### Home Team")
         home_team = st.selectbox("Choose home team", data_manager.teams, key="home")
-    
+
     with col3:
-        st.markdown("#### ✈️ Away Team")
+        st.markdown("#### Away Team")
         away_options = [team for team in data_manager.teams if team != home_team]
         away_team = st.selectbox("Choose away team", away_options, key="away")
     
@@ -450,14 +1034,34 @@ def render_team_preview(home_team: str, away_team: str, data_manager: DataManage
         render_team_card(away_team, data_manager, "✈️")
 
 def render_team_card(team_name: str, data_manager: DataManager, default_emoji: str):
-    """Render team card with logo and stats."""
+    """
+    Render a team card with logo, emoji, and key team statistics.
+    
+    Displays team information in a compact card format including team logo,
+    default emoji indicator, and core performance metrics (attack, midfield, defense).
+    
+    Args:
+        team_name (str): Full name of the team to display
+        data_manager (DataManager): DataManager instance for retrieving team data
+        default_emoji (str): Emoji to display alongside team name (🏠 for home, ✈️ for away)
+        
+    UI Components:
+        - Team logo image (if available) or placeholder
+        - Team name with emoji indicator
+        - Attack, Midfield, Defense ratings display
+        - Responsive card layout with proper spacing
+        
+    Data Flow:
+        1. Retrieves team data via data_manager.get_team_data()
+        2. Displays logo image or uses placeholder
+        3. Shows team name with contextual emoji
+        4. Presents core team statistics in readable format
+    """
     att, mid, def_, logo_url = data_manager.get_team_data(team_name)
     
     # Logo
     if logo_url:
         st.markdown(f'<img src="{logo_url}" class="team-logo" alt="{team_name} logo">', unsafe_allow_html=True)
-    else:
-        st.markdown(f'<div class="default-team-emoji">{default_emoji}</div>', unsafe_allow_html=True)
     
     # Team name
     st.markdown(f"<div class='team-name'>{team_name}</div>", unsafe_allow_html=True)
@@ -536,7 +1140,36 @@ def render_team_card(team_name: str, data_manager: DataManager, default_emoji: s
     """, unsafe_allow_html=True)
 
 def render_prediction_results(home_team: str, away_team: str):
-    """Render prediction results."""
+    """
+    Render match prediction results with detailed outcome analysis.
+    
+    Displays comprehensive prediction results including match outcome,
+    confidence levels, predicted scores, and betting recommendations.
+    Only renders if all required prediction data is available in session state.
+    
+    Args:
+        home_team (str): Name of the home team
+        away_team (str): Name of the away team
+        
+    Session State Requirements:
+        - 'prediction': Match outcome ('Home Win', 'Draw', 'Away Win')
+        - 'confidence': Prediction confidence percentage (0-100)
+        - 'home_goals': Predicted goals for home team
+        - 'away_goals': Predicted goals for away team
+        
+    UI Components:
+        - Match outcome header with team names
+        - Confidence indicator with visual styling
+        - Predicted score display
+        - Betting recommendation section
+        - Color-coded outcome styling (green/blue/red for win/draw/loss)
+        
+    Visual Elements:
+        - High confidence (>70%): Green styling
+        - Medium confidence (50-70%): Orange styling  
+        - Low confidence (<50%): Red styling
+        - Responsive layout with centered content
+    """
     if not all(key in st.session_state for key in ["prediction", "confidence", "home_goals", "away_goals"]):
         return
     
@@ -545,18 +1178,10 @@ def render_prediction_results(home_team: str, away_team: str):
     home_goals = st.session_state["home_goals"]
     away_goals = st.session_state["away_goals"]
     
-    # Determine emoji
-    if 'VICTORY' in outcome and home_team.upper() in outcome:
-        emoji = '🔥'
-    elif 'VICTORY' in outcome and away_team.upper() in outcome:
-        emoji = '⚡'
-    else:
-        emoji = '⚖️'
-    
     st.markdown(f"""
     <div style="margin-top: 20px; padding: 15px; text-align: center;">
         <h2 style="margin: 0; font-size: 1.8rem; color: white; font-weight: bold;">
-            {emoji} {outcome}
+            {outcome}
         </h2>
         <h3 style="margin: 15px 0; font-size: 4.2rem; color: #FFD700; font-weight: bold;">
             {home_goals} - {away_goals}
@@ -576,6 +1201,62 @@ def clear_prediction_if_teams_changed(home_team: str, away_team: str):
             if key in st.session_state:
                 del st.session_state[key]
 
+# ========== SIDEBAR FUNCTIONS ==========
+def render_sidebar():
+    """
+    Render application sidebar with season selection and filtering options.
+    
+    Creates sidebar interface for selecting football seasons and applying
+    various filters to the prediction model. Provides user controls for
+    customizing the prediction experience.
+    
+    UI Components:
+        - Season selector dropdown with available seasons
+        - Additional filter options (if implemented)
+        - Navigation and settings controls
+        
+    Data Flow:
+        1. Creates temporary DataManager to retrieve available seasons
+        2. Renders season selection widget in sidebar
+        3. Updates session state with selected filters
+        4. Provides context for main application filtering
+        
+    Session State Effects:
+        - Updates selected season for data filtering
+        - Maintains filter preferences across page refreshes
+        - Influences prediction model data scope
+    """
+    
+    # Get seasons using temporary data manager
+    temp_data_manager = DataManager("All Seasons")
+    available_seasons = temp_data_manager.get_available_seasons()
+    
+    # Season selection
+    st.sidebar.markdown("### Sélection de Saison")
+    selected_season = st.sidebar.selectbox(
+        "Choisir une saison:",
+        available_seasons,
+        index=0,  # "All Seasons" par défaut
+        key="season_selector",
+        help="Filtrer les statistiques par saison. 'All Seasons' affiche toutes les données disponibles."
+    )
+    
+    # Season statistics (only if different from "All Seasons")
+    if selected_season != "All Seasons":
+        season_data_manager = DataManager(selected_season)
+        filtered_data = season_data_manager.filter_data_by_season(season_data_manager.match_data)
+        
+        if not filtered_data.empty:
+            total_matches = len(filtered_data)
+            st.sidebar.metric("Matchs dans la saison", total_matches)
+            
+            # Most goals in a match
+            if 'FTHG' in filtered_data.columns and 'FTAG' in filtered_data.columns:
+                max_goals = (filtered_data['FTHG'] + filtered_data['FTAG']).max()
+                st.sidebar.metric("Plus grand nombre de buts", int(max_goals))
+    
+    return selected_season
+
 # ========== MAIN APP ==========
 def main():
     """Main application function."""
@@ -583,13 +1264,33 @@ def main():
     st.set_page_config(**APP_CONFIG)
     AppStyle.apply_custom_css()
     
-    # Initialize data manager
-    data_manager = DataManager()
+    # Render sidebar and get selected options
+    selected_season = render_sidebar()
+    
+    # Initialize data manager with selected season
+    data_manager = DataManager(selected_season)
     
     # Initialize session state
-    for var in ["last_pred_home", "last_pred_away", "show_stats"]:
+    for var in ["last_pred_home", "last_pred_away"]:
         if var not in st.session_state:
-            st.session_state[var] = None if "last_pred" in var else False
+            st.session_state[var] = None
+    
+    # Main header with season info
+    if selected_season != "All Seasons":
+        season_text = f" - Saison {selected_season}"
+    else:
+        season_text = " - Toutes Saisons"
+    
+    st.markdown(f"""
+    <div style="text-align: center; margin-bottom: 30px;">
+        <h1 style="color: #667eea; font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 3rem; margin-bottom: 10px;">
+             Jupiler Pro League Match Predictions
+        </h1>
+        <p style="color: rgba(255,255,255,0.8); font-size: 1.2rem; margin: 0;">
+            Analyse Prédictive Professionnelle{season_text}
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Team selection
     home_team, away_team = render_team_selection(data_manager)
@@ -604,7 +1305,7 @@ def main():
     st.markdown('<div class="predict-container">', unsafe_allow_html=True)
     _, col2, _ = st.columns([1, 1, 1])
     with col2:
-        if st.button("⚽ Predict Match", key="predict_btn", use_container_width=True):
+        if st.button(" Predict Match", key="predict_btn", use_container_width=True):
             try:
                 outcome, confidence = data_manager.predict_match(home_team, away_team)
                 
@@ -612,8 +1313,7 @@ def main():
                     'prediction': outcome,
                     'confidence': confidence,
                     'last_pred_home': home_team,
-                    'last_pred_away': away_team,
-                    'show_stats': True
+                    'last_pred_away': away_team
                 })
                 
                 st.rerun()
@@ -623,6 +1323,9 @@ def main():
                 st.info("💡 Try selecting different teams or refresh the page")
     
     st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Analytics charts section
+    render_analytics_charts(home_team, away_team, data_manager)
     
     # Footer
     AppStyle.add_footer(author="Santo, Konstantin and RV a.k.a The Dream Team", year="2025")
